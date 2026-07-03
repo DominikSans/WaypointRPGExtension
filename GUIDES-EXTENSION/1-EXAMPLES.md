@@ -1,8 +1,8 @@
 # Examples — WaypointRPGExtension V2
 
-> **Versión:** `v0.2.0`  
-> **Descripción:** referencia breve de campos y ejemplos de uso del esquema V2, incluye entity targets (Paso 3).  
-> **Modificado:** jueves, 3 de julio de 2026, 16:50 (America/Lima).
+> **Versión:** `v0.3.0`  
+> **Descripción:** referencia breve de campos y ejemplos de uso del esquema V2, incluye entity targets (Paso 3) y zone trigger V2 (Paso 4).  
+> **Modificado:** jueves, 3 de julio de 2026 (America/Lima).
 
 Use `tracked_locatable_waypoint` como hijo de una audiencia. Como entry raíz se aplica a todos los jugadores.
 
@@ -598,6 +598,104 @@ El `npcEntryId` sería `"oliver_npc"`.
 Si el NPC tiene una actividad de patrulla, el waypoint **sigue su posición actual** automáticamente. El sistema obtiene la posición live del `ActivityManager` del NPC. No requiere configuración adicional.
 
 **Requisito:** EntityExtension debe estar instalada en el servidor. Si no está, el target devuelve `null` silenciosamente (sin crash, sin warning).
+
+---
+
+---
+
+## waypoint_zone_trigger — V2
+
+Dispara triggers al entrar/salir del radio de targets activos del sistema V2: location objectives, entity targets Bukkit, Typewriter NPCs.
+
+### Fields
+
+| Field | Tipo | Default | Descripción |
+|---|---|---|---|
+| `radius` | Double | `5.0` | Radio en bloques. |
+| `checkIntervalTicks` | Int | `5` | Intervalo de verificación en ticks (1–100). |
+| `targetMode` | Enum | `ANY_ACTIVE_TARGET` | `OBJECTIVES_ONLY` solo objectives; `ANY_ACTIVE_TARGET` objectives + entityTargets. |
+| `maxTargets` | Int | `5` | Máximo de targets considerados (0 = desactivado). Debe coincidir con `general.maxTargets` del waypoint entry. |
+| `selection` | Enum | `CLOSEST` | Orden antes de aplicar maxTargets: `CLOSEST` o `HIGHEST_PRIORITY`. |
+| `triggerPerTarget` | Bool | `false` | `false`: un solo onEnter/onExit si ANY target cambia. `true`: onEnter/onExit por cada target key individual. |
+| `triggerOnce` | Bool | `false` | `true`: onEnter solo se dispara una vez por key hasta que el jugador salga y resetOnExit sea true. |
+| `resetOnExit` | Bool | `true` | `true`: al salir resetea el guard de triggerOnce, permitiendo re-trigger. |
+| `entityTargets` | List | `[]` | Lista de entity/NPC targets extra (mismo formato que `integrations.entityTargets`). Solo aplica con `ANY_ACTIVE_TARGET`. |
+| `onEnter` | Ref | emptyRef | Trigger al entrar en el radio de un target. |
+| `onExit` | Ref | emptyRef | Trigger al salir o cuando el target desaparece. |
+
+### Semántica de triggerPerTarget
+
+| triggerPerTarget | Resultado |
+|---|---|
+| `false` | Un solo onEnter cuando **algún** target entra. Un onExit cuando **todos** salen o desaparecen. |
+| `true` | onEnter/onExit **por cada target individual** (key = UUID, NPC entry ID, o posición). |
+
+`triggerOnce=true` + `resetOnExit=true`: el jugador puede re-entrar y volver a activar onEnter después de salir.  
+`triggerOnce=true` + `resetOnExit=false`: onEnter se activa solo la primera vez (permanente por sesión).
+
+### Ejemplo mínimo — objectives only
+
+```json
+{
+  "type": "waypoint_zone_trigger",
+  "id": "zt_cave_enter",
+  "radius": 6.0,
+  "checkIntervalTicks": 5,
+  "targetMode": "OBJECTIVES_ONLY",
+  "maxTargets": 1,
+  "onEnter": "my_trigger_id",
+  "onExit": "my_exit_trigger_id"
+}
+```
+
+### Ejemplo — entity target + triggerOnce
+
+Dispara `quest_npc_arrived` la primera vez que el jugador llega al radio del NPC Oliver, y `quest_npc_left` al alejarse. No vuelve a disparar `quest_npc_arrived` hasta que el jugador salga (resetOnExit default = true).
+
+```json
+{
+  "type": "waypoint_zone_trigger",
+  "id": "zt_oliver",
+  "radius": 3.0,
+  "checkIntervalTicks": 5,
+  "targetMode": "ANY_ACTIVE_TARGET",
+  "maxTargets": 1,
+  "selection": "CLOSEST",
+  "triggerOnce": true,
+  "resetOnExit": true,
+  "entityTargets": [
+    {
+      "targetType": "TYPEWRITER_NPC",
+      "npcEntryId": "oliver_npc",
+      "displayName": "<gold>Oliver</gold>",
+      "priority": 0
+    }
+  ],
+  "onEnter": "quest_npc_arrived",
+  "onExit": "quest_npc_left"
+}
+```
+
+### Ejemplo — multi-target per-target mode
+
+`triggerPerTarget=true` dispara eventos distintos al entrar/salir de cada target. Útil para colección de items o puntos de control múltiples.
+
+```json
+{
+  "type": "waypoint_zone_trigger",
+  "id": "zt_checkpoints",
+  "radius": 5.0,
+  "checkIntervalTicks": 4,
+  "targetMode": "OBJECTIVES_ONLY",
+  "maxTargets": 5,
+  "selection": "CLOSEST",
+  "triggerPerTarget": true,
+  "onEnter": "checkpoint_reached",
+  "onExit": "checkpoint_left"
+}
+```
+
+Con `maxTargets=5` monitorea hasta 5 objectives simultáneos. Cada uno genera su propio evento al entrar/salir.
 
 ---
 

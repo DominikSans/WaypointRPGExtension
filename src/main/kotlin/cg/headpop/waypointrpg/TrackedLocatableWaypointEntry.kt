@@ -872,87 +872,7 @@ private class TrackedLocatableWaypointDisplay(
             .map { applyRoute(player, state, it) }
     }
 
-    private fun resolveEntityTarget(et: EntityWaypointTarget, player: Player): WaypointTarget? {
-        val entity = when (et.targetType) {
-            EntityTargetType.UUID -> {
-                val uid = runCatching { UUID.fromString(et.uuid) }.getOrNull() ?: return null
-                Bukkit.getEntity(uid)
-            }
-            EntityTargetType.NAME -> {
-                if (et.name.isBlank()) return null
-                player.world.entities
-                    .filter { it !is Player && it.location.distance(player.location) <= et.maxDistance }
-                    .firstOrNull { e ->
-                        e.name.equals(et.name, ignoreCase = true)
-                            || e.customName()?.let { n -> net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText().serialize(n) }?.equals(et.name, ignoreCase = true) == true
-                    }
-            }
-            EntityTargetType.SCOREBOARD_TAG -> {
-                if (et.tag.isBlank()) return null
-                player.world.entities
-                    .filter { it !is Player && it.scoreboardTags.contains(et.tag) && it.location.distance(player.location) <= et.maxDistance }
-                    .minByOrNull { it.location.distanceSquared(player.location) }
-            }
-            EntityTargetType.TYPEWRITER_NPC -> {
-                // Typewriter NPCs are fake (packet) entities — not in world.entities.
-                // We resolve them separately below and return early.
-                return resolveTypewriterNpcTarget(et, player)
-            }
-        } ?: return null
-
-        if (entity.world != player.world) return null
-        val loc = entity.location
-        val dist = player.location.distance(loc)
-        val label = et.displayName.get(player).ifBlank { entity.name }
-        return WaypointTarget(
-            objective = null, position = null, location = loc,
-            distance = dist, customName = label,
-            entityUUID = entity.uniqueId.toString(),
-            entityPriority = et.priority,
-            entityTypeName = entity.type.name,
-        )
-    }
-
-    private fun findEntityByUuid(uuid: String): org.bukkit.entity.Entity? {
-        val uid = runCatching { UUID.fromString(uuid) }.getOrNull() ?: return null
-        return Bukkit.getEntity(uid)
-    }
-
-    // Typewriter NPC target — EntityExtension required at runtime.
-    // Wrapped in runCatching: returns null if EntityExtension is absent or NPC not found.
-    // Priority: live ActivityManager position (follows Patrol/Path) → spawnLocation fallback.
-    private fun resolveTypewriterNpcTarget(et: EntityWaypointTarget, player: Player): WaypointTarget? {
-        if (et.npcEntryId.isBlank()) return null
-        return runCatching {
-            // 1. Try live position from SharedAudienceEntityDisplay (follows Patrol/Path activity)
-            val audienceManager = plugin.get<AudienceManager>()
-            val display = audienceManager
-                .findDisplays(com.typewritermc.engine.paper.entry.entity.SharedAudienceEntityDisplay::class)
-                .firstOrNull { it.instanceEntryRef.id == et.npcEntryId }
-
-            val rawLoc: Location? = if (display != null && display.isSpawnedIn(player.uniqueId)) {
-                display.position(player.uniqueId)?.toBukkitLocation()
-            } else {
-                // 2. Fallback: static spawnLocation from NpcInstance entry
-                Query.findById<com.typewritermc.entity.entries.entity.custom.NpcInstance>(et.npcEntryId)
-                    ?.spawnLocation?.toBukkitLocation()
-            }
-            val location = rawLoc ?: return@runCatching null
-            if (location.world != player.world) return@runCatching null
-
-            val dist = player.location.distance(location)
-            val label = et.displayName.get(player).ifBlank {
-                Query.findById<com.typewritermc.entity.entries.entity.custom.NpcInstance>(et.npcEntryId)?.name ?: et.npcEntryId
-            }
-            WaypointTarget(
-                objective = null, position = null, location = location,
-                distance = dist, customName = label,
-                entityUUID = null,  // fake entity — no glow
-                entityPriority = et.priority,
-                entityTypeName = "NPC",
-            )
-        }.getOrNull()
-    }
+    // resolveEntityTarget, resolveTypewriterNpcTarget, findEntityByUuid — package-level below class
 
     private fun applyRoute(player: Player, state: PlayerWaypointState, directTarget: WaypointTarget): WaypointTarget {
         if (directTarget.entityUUID != null) return directTarget
@@ -1602,8 +1522,8 @@ private class TrackedLocatableWaypointDisplay(
     }
 }
 
-// Internal data class — not exposed as a KSP entry
-private data class WaypointTarget(
+// Shared across WaypointZoneTriggerDisplay (same package). Not a KSP entry.
+internal data class WaypointTarget(
     val objective: LocatableObjective?,
     val position: Position?,
     val location: Location,
@@ -1615,4 +1535,102 @@ private data class WaypointTarget(
     val entityUUID: String? = null,
     val entityPriority: Int = 0,
     val entityTypeName: String? = null,
+    val sourceId: String? = null,
 )
+
+// Stable key for zone-trigger per-target tracking.
+// Entity UUID when available; NPC entry id via sourceId; otherwise objective+position.
+internal fun WaypointTarget.zoneKey(): String {
+    if (entityUUID != null) return "entity:$entityUUID"
+    if (sourceId != null) return sourceId
+    val worldKey = location.world?.uid?.toString() ?: location.world?.name ?: "?"
+    val x = (location.x * 4.0).toLong()
+    val y = (location.y * 4.0).toLong()
+    val z = (location.z * 4.0).toLong()
+    return "${objective?.id ?: customName ?: "pos"}:$worldKey:$x:$y:$z"
+}
+
+// --- Shared entity resolution (used by TrackedLocatableWaypointDisplay and WaypointZoneTriggerDisplay) ---
+
+internal fun resolveEntityTarget(et: EntityWaypointTarget, player: Player): WaypointTarget? {
+    val entity = when (et.targetType) {
+        EntityTargetType.UUID -> {
+            val uid = runCatching { UUID.fromString(et.uuid) }.getOrNull() ?: return null
+            Bukkit.getEntity(uid)
+        }
+        EntityTargetType.NAME -> {
+            if (et.name.isBlank()) return null
+            player.world.entities
+                .filter { it !is Player && it.location.distance(player.location) <= et.maxDistance }
+                .firstOrNull { e ->
+                    e.name.equals(et.name, ignoreCase = true)
+                        || e.customName()?.let { n ->
+                            net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer
+                                .plainText().serialize(n)
+                        }?.equals(et.name, ignoreCase = true) == true
+                }
+        }
+        EntityTargetType.SCOREBOARD_TAG -> {
+            if (et.tag.isBlank()) return null
+            player.world.entities
+                .filter { it !is Player && it.scoreboardTags.contains(et.tag) && it.location.distance(player.location) <= et.maxDistance }
+                .minByOrNull { it.location.distanceSquared(player.location) }
+        }
+        EntityTargetType.TYPEWRITER_NPC -> {
+            // Typewriter NPCs are packet-only — not in world.entities. Resolved separately.
+            return resolveTypewriterNpcTarget(et, player)
+        }
+    } ?: return null
+
+    if (entity.world != player.world) return null
+    val loc = entity.location
+    val dist = player.location.distance(loc)
+    val label = et.displayName.get(player).ifBlank { entity.name }
+    return WaypointTarget(
+        objective = null, position = null, location = loc,
+        distance = dist, customName = label,
+        entityUUID = entity.uniqueId.toString(),
+        entityPriority = et.priority,
+        entityTypeName = entity.type.name,
+    )
+}
+
+internal fun findEntityByUuid(uuid: String): org.bukkit.entity.Entity? {
+    val uid = runCatching { UUID.fromString(uuid) }.getOrNull() ?: return null
+    return Bukkit.getEntity(uid)
+}
+
+// Typewriter NPC target — EntityExtension required at runtime.
+// Wrapped in runCatching: returns null if EntityExtension absent or NPC not found.
+// Priority: live SharedAudienceEntityDisplay position → NpcInstance.spawnLocation fallback.
+internal fun resolveTypewriterNpcTarget(et: EntityWaypointTarget, player: Player): WaypointTarget? {
+    if (et.npcEntryId.isBlank()) return null
+    return runCatching {
+        val audienceManager = plugin.get<AudienceManager>()
+        val display = audienceManager
+            .findDisplays(com.typewritermc.engine.paper.entry.entity.SharedAudienceEntityDisplay::class)
+            .firstOrNull { it.instanceEntryRef.id == et.npcEntryId }
+
+        val rawLoc: Location? = if (display != null && display.isSpawnedIn(player.uniqueId)) {
+            display.position(player.uniqueId)?.toBukkitLocation()
+        } else {
+            Query.findById<com.typewritermc.entity.entries.entity.custom.NpcInstance>(et.npcEntryId)
+                ?.spawnLocation?.toBukkitLocation()
+        }
+        val location = rawLoc ?: return@runCatching null
+        if (location.world != player.world) return@runCatching null
+
+        val dist = player.location.distance(location)
+        val label = et.displayName.get(player).ifBlank {
+            Query.findById<com.typewritermc.entity.entries.entity.custom.NpcInstance>(et.npcEntryId)?.name ?: et.npcEntryId
+        }
+        WaypointTarget(
+            objective = null, position = null, location = location,
+            distance = dist, customName = label,
+            entityUUID = null,
+            entityPriority = et.priority,
+            entityTypeName = "NPC",
+            sourceId = "npc:${et.npcEntryId}",
+        )
+    }.getOrNull()
+}

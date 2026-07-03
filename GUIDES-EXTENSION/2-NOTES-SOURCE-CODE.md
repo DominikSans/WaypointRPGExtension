@@ -1,8 +1,8 @@
 # Notes — Source Code
 
-> **Versión:** `v0.2.0-dev`  
+> **Versión:** `v0.3.0-dev`  
 > **Descripción:** migración, problemas, soluciones, warnings y extractos del código.  
-> **Modificado:** jueves, 3 de julio de 2026, 16:50 (America/Lima).
+> **Modificado:** jueves, 3 de julio de 2026 (America/Lima).
 
 ## Arquitectura
 
@@ -96,9 +96,7 @@ Los entity targets se incluyen en el mismo pool que los objectives y quedan suje
 
 ### Typewriter NPC
 
-Los NPCs de Typewriter son fake entities gestionadas por EntityLib (packets). No son `org.bukkit.entity.Entity` y no pueden encontrarse con `Bukkit.getEntity()` ni `world.entities`. Para rastrear un NPC Typewriter:
-- Asígnale un scoreboard tag real con NMS o un plugin (ej. `Citizens` o un script que aplique `addScoreboardTag`).
-- O usa una location objective en su posición fija.
+Los NPCs de Typewriter son fake entities gestionadas por EntityLib (packets). No son `org.bukkit.entity.Entity` y no pueden encontrarse con `Bukkit.getEntity()` ni `world.entities`. Se resuelven con `targetType = TYPEWRITER_NPC` y el entry ID del `NpcInstance`. El sistema usa `SharedAudienceEntityDisplay.position(playerUUID)` para posición live, con fallback a `NpcInstance.spawnLocation`.
 
 ### Placeholders en `updateLabel`
 
@@ -109,6 +107,27 @@ Los NPCs de Typewriter son fake entities gestionadas por EntityLib (packets). No
 ```
 
 `entityTypeName` = `entity.type.name` (ej. `"ZOMBIE"`, `"PLAYER"`, `"ARMOR_STAND"`).
+
+## WaypointZoneTrigger — diseño interno (Paso 4)
+
+`WaypointZoneTriggerDisplay` reemplaza el `Boolean` por jugador con `PlayerZoneState(insideKeys, triggeredOnceKeys)` para tracking per-key.
+
+**resolveZoneTargets**: collecta objectives via `trackedShowingObjectives().filterIsInstance<LocatableObjective>()` + entity targets shared con `resolveEntityTarget` / `resolveTypewriterNpcTarget` (funciones package-level en `TrackedLocatableWaypointEntry.kt`). Aplica misma sort + `maxTargets`.
+
+**zoneKey()**: extension `internal` en `WaypointTarget`. Prioridad: `entityUUID` → `sourceId` (NPC: `"npc:<entryId>"`) → objective+posición con precisión 0.25 bloques.
+
+**checkPlayer logic**:
+```
+effectiveInRadius = { inRadiusKeys } si triggerPerTarget, o {"§any"} si alguno en radio
+toExit = insideKeys - effectiveInRadius  → onExit + remove + resetOnExit
+toEnter = effectiveInRadius - insideKeys → skip si triggerOnce+triggeredOnce, else onEnter + add
+```
+
+Cuando targets desaparecen mid-session: ya no están en `effectiveInRadius` → incluidos en `toExit` automáticamente (sin lógica extra).
+
+**Funciones compartidas** (package-level, `internal`): `resolveEntityTarget`, `resolveTypewriterNpcTarget`, `findEntityByUuid`, `WaypointTarget.zoneKey()`.
+
+`WaypointTarget` ahora `internal data class` con campo `sourceId: String?` para NPC key estable.
 
 ## Límites conocidos
 
