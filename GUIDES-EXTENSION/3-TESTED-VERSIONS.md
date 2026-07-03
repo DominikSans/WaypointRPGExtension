@@ -1,8 +1,8 @@
 # Tested Versions — WaypointRPGExtension
 
-> **Versión:** `v0.1.0-dev`  
+> **Versión:** `v0.2.0-dev`  
 > **Descripción:** historial del entorno probado, resultados verificables y cambios mayores.  
-> **Modificado:** viernes, 3 de julio de 2026, 12:22 (America/Lima).
+> **Modificado:** jueves, 3 de julio de 2026, 16:50 (America/Lima).
 
 ## Reglas de registro
 
@@ -16,7 +16,9 @@
 
 | Versión | Momento | Verificación | Estado |
 |---|---|---|---|
-| `v0.1.0-dev` | viernes, 3 de julio de 2026, 12:22 `-05:00` | Documentación alineada con el source V2 | Desarrollo |
+| `v0.2.0-dev` | jueves, 3 de julio de 2026, 16:50 `-05:00` | `BUILD SUCCESSFUL` — Paso 3 entity targets | Desarrollo |
+| `v0.2-waypoint-v2-multitarget-stable` | jueves, 3 de julio de 2026 | Commit + tag git estable pre-Paso3 | Estable (pre entity targets) |
+| `v0.1.0-dev` | viernes, 3 de julio de 2026, 12:22 `-05:00` | Documentación alineada con el source V2 | Archivo |
 | build `1.0.0` | martes, 30 de junio de 2026; hora no registrada | `BUILD SUCCESSFUL` histórico | Build aprobado; pruebas manuales no certificadas |
 
 ## Cambio mayor — V2
@@ -66,3 +68,7 @@ Formato para próximos resultados:
 - Rutas reactivadas dentro de la misma sesión.
 - Glow combinado con otros shared entity flags.
 - Manifests V1 mediante `simple_tracked_waypoint`.
+- Entity targets: `UUID` con entidad despawnada (deve devolver null limpiamente).
+- Entity targets: `NAME` con múltiples entidades del mismo nombre (debe tomar la más cercana... o la primera; `firstOrNull`).
+- Entity targets: `SCOREBOARD_TAG` con entidades en distinto mundo.
+- Entity targets mezclados con objectives en `maxTargets=2`.

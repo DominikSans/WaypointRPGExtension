@@ -1,8 +1,8 @@
 # Notes — Source Code
 
-> **Versión:** `v0.1.0-dev`  
+> **Versión:** `v0.2.0-dev`  
 > **Descripción:** migración, problemas, soluciones, warnings y extractos del código.  
-> **Modificado:** viernes, 3 de julio de 2026, 12:22 (America/Lima).
+> **Modificado:** jueves, 3 de julio de 2026, 16:50 (America/Lima).
 
 ## Arquitectura
 
@@ -85,12 +85,37 @@ EntityData(20, EntityDataTypes.FLOAT, maxOf(sx, sz))
 EntityData(21, EntityDataTypes.FLOAT, sy)
 ```
 
+## Entity Targets — diseño interno (Paso 3)
+
+`EntityWaypointTarget` admite tres modos:
+- `UUID`: `Bukkit.getEntity(uuid)` — global, sin búsqueda por mundo.
+- `NAME`: `world.entities` filtrado por `entity.name` o `customName()`, dentro de `maxDistance`.
+- `SCOREBOARD_TAG`: `entity.scoreboardTags.contains(tag)`, elige la más cercana dentro de `maxDistance`.
+
+Los entity targets se incluyen en el mismo pool que los objectives y quedan sujetos a `maxTargets`. La key de slot usa el UUID tras la resolución: `entity:$uuid`. `entityPriority` alimenta el tiebreaker al ordenar con `HIGHEST_PRIORITY`.
+
+### Typewriter NPC
+
+Los NPCs de Typewriter son fake entities gestionadas por EntityLib (packets). No son `org.bukkit.entity.Entity` y no pueden encontrarse con `Bukkit.getEntity()` ni `world.entities`. Para rastrear un NPC Typewriter:
+- Asígnale un scoreboard tag real con NMS o un plugin (ej. `Citizens` o un script que aplique `addScoreboardTag`).
+- O usa una location objective en su posición fija.
+
+### Placeholders en `updateLabel`
+
+```kotlin
+.replace("{target_type}", if (isEntityTarget) "entity" else "objective")
+.replace("{entity_name}", if (isEntityTarget) markerName else "")
+.replace("{entity_type}", entityTypeName ?: "")
+```
+
+`entityTypeName` = `entity.type.name` (ej. `"ZOMBIE"`, `"PLAYER"`, `"ARMOR_STAND"`).
+
 ## Límites conocidos
 
 - El fondo del label se suprime en modo `BOTH`.
 - `label.opacity` también controla el symbol.
 - `label.seeThrough` no tiene efecto actual.
-- `entityTargets` queda fuera de `maxTargets`.
+- `NAME` y `SCOREBOARD_TAG` llaman `world.entities` cada resolución — evitar en listas largas con `tickRate` bajo.
 - Los índices de ruta pueden conservarse al reactivar un objective.
 - La escala del symbol usa distancia 3D; snap usa distancia horizontal.
 - El trail no es pathfinding y puede atravesar obstáculos.
