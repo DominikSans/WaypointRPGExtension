@@ -1,6 +1,6 @@
 # Notes — Source Code
 
-> **Versión:** `v0.3.0-dev`  
+> **Versión:** `v0.4.0-dev`  
 > **Descripción:** migración, problemas, soluciones, warnings y extractos del código.  
 > **Modificado:** jueves, 3 de julio de 2026 (America/Lima).
 
@@ -108,6 +108,26 @@ Los NPCs de Typewriter son fake entities gestionadas por EntityLib (packets). No
 
 `entityTypeName` = `entity.type.name` (ej. `"ZOMBIE"`, `"PLAYER"`, `"ARMOR_STAND"`).
 
+## BetterHUD Bridge — diseño interno (Paso 5)
+
+`WaypointBetterHudBridgeDisplay` reemplaza el bridge V1 (solo objectives, index-based IDs) con soporte completo V2.
+
+**Resolver compartido**: llama `resolveWaypointTargets(player, selection, maxTargets, entityTargets, includeObjectives, includeEntities)` — misma función package-level que zone trigger.
+
+**`BetterHudTargetMode`**: `OBJECTIVES_ONLY` / `ENTITIES_ONLY` / `ANY_ACTIVE_TARGET`. Controla `includeObjectives` e `includeEntities` en la llamada al resolver.
+
+**`pointIdFor(target)`**: `"${prefix}${entry.id}_${target.zoneKey()}"` sanitizado y truncado a 96 chars. Estable aunque cambie el orden de sort — no más flicker.
+
+**`PlayerHudState(activeIds, knownPositions)`**: rastrea qué puntos están activos y su última posición `Triple<Double,Double,Double>`. Si el target se mueve (entidad Bukkit, NPC Typewriter en patrol), `posChanged = knownPositions[id] != newPos` → remove + re-add del punto → posición actualizada en BetterHUD. Cambio visible al siguiente `updateIntervalTicks`.
+
+**`arriveRadius`**: puntos filtrados antes de enviar a BetterHUD. Si `target.distance <= arriveRadius` → remove del HUD si estaba activo.
+
+**`betterHudAvailable()`** companion object con `@Volatile` flag: check una sola vez, warning único en consola si ausente. No spam por tick.
+
+**Cleanup**: `onPlayerRemove` → `removeAllPoints`, `dispose()` → todos los jugadores. `toRemove = state.activeIds - visible.keys` limpia puntos obsoletos (target desapareció o fuera de arrive radius).
+
+**`resolveWaypointTargets`** — función package-level en `TrackedLocatableWaypointEntry.kt`. Usada por TrackedLocatableWaypointDisplay (vía llamada directa interna), WaypointZoneTriggerDisplay y WaypointBetterHudBridgeDisplay. El resolver de zone trigger fue simplificado para delegarla.
+
 ## WaypointZoneTrigger — diseño interno (Paso 4)
 
 `WaypointZoneTriggerDisplay` reemplaza el `Boolean` por jugador con `PlayerZoneState(insideKeys, triggeredOnceKeys)` para tracking per-key.
@@ -139,6 +159,7 @@ Cuando targets desaparecen mid-session: ya no están en `effectiveInRadius` → 
 - La escala del symbol usa distancia 3D; snap usa distancia horizontal.
 - El trail no es pathfinding y puede atravesar obstáculos.
 - Zone trigger y BetterHUD usan targets directos, no puntos de ruta.
+- BetterHUD `PointedLocation` no acepta texto vía API — `pointText`/`pointSubText` son campos de panel pero el texto real se configura en el layout BetterHUD.
 - El glow escribe shared flags `0x40`/`0x00`.
 
 ## Threading, cleanup y warnings

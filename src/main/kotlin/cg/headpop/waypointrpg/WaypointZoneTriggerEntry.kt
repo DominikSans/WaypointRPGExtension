@@ -119,47 +119,15 @@ private class WaypointZoneTriggerDisplay(
 
     // --- Target resolution ---
 
-    private fun resolveZoneTargets(player: Player): List<WaypointTarget> {
-        val playerLoc = player.location
-        if (entry.maxTargets <= 0) return emptyList()
-
-        val objectiveTargets = player.trackedShowingObjectives()
-            .filterIsInstance<LocatableObjective>()
-            .flatMap { objective ->
-                objective.positions(player).mapNotNull { position ->
-                    val loc = runCatching { position.toBukkitLocation() }.getOrNull() ?: return@mapNotNull null
-                    if (loc.world != playerLoc.world) return@mapNotNull null
-                    WaypointTarget(
-                        objective = objective, position = position, location = loc,
-                        distance = playerLoc.distance(loc),
-                    )
-                }
-            }
-            .toList()
-
-        val entityTargets: List<WaypointTarget> = if (entry.targetMode == ZoneTriggerTargetMode.ANY_ACTIVE_TARGET) {
-            entry.entityTargets.mapNotNull { resolveEntityTarget(it, player) }
-        } else emptyList()
-
-        val all = objectiveTargets + entityTargets
-        if (all.isEmpty()) return emptyList()
-
-        val sorted = when (entry.selection) {
-            WaypointTargetSelection.CLOSEST ->
-                all.sortedWith(
-                    compareBy<WaypointTarget> { it.distance }
-                        .thenByDescending { it.objective?.priority ?: it.entityPriority }
-                        .thenBy { it.objective?.id ?: it.customName ?: "" }
-                )
-            WaypointTargetSelection.HIGHEST_PRIORITY ->
-                all.sortedWith(
-                    compareByDescending<WaypointTarget> { it.objective?.priority ?: it.entityPriority }
-                        .thenBy { it.distance }
-                        .thenBy { it.objective?.id ?: it.customName ?: "" }
-                )
-        }
-        return sorted.take(entry.maxTargets)
-    }
+    private fun resolveZoneTargets(player: Player): List<WaypointTarget> =
+        resolveWaypointTargets(
+            player = player,
+            selection = entry.selection,
+            maxTargets = entry.maxTargets,
+            entityTargets = entry.entityTargets,
+            includeObjectives = true,
+            includeEntities = entry.targetMode == ZoneTriggerTargetMode.ANY_ACTIVE_TARGET,
+        )
 
     // --- Zone check ---
 

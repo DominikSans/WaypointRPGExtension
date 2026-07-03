@@ -1,6 +1,6 @@
 # Tested Versions — WaypointRPGExtension
 
-> **Versión:** `v0.3.0-dev`  
+> **Versión:** `v0.4.0-dev`  
 > **Descripción:** historial del entorno probado, resultados verificables y cambios mayores.  
 > **Modificado:** jueves, 3 de julio de 2026 (America/Lima).
 
@@ -16,7 +16,8 @@
 
 | Versión | Momento | Verificación | Estado |
 |---|---|---|---|
-| `v0.3.0-dev` | jueves, 3 de julio de 2026 | `BUILD SUCCESSFUL` — Paso 4 zone trigger V2 | Desarrollo |
+| `v0.4.0-dev` | jueves, 3 de julio de 2026 | `BUILD SUCCESSFUL` — Paso 5 BetterHUD bridge V2 | Desarrollo |
+| `v0.4-zone-trigger-stable` | jueves, 3 de julio de 2026 | Commit + tag git estable pre-Paso5 | Estable (zone trigger V2) |
 | `v0.3-entity-targets-stable` | jueves, 3 de julio de 2026 | Commit + tag git estable pre-Paso4 | Estable (entity targets) |
 | `v0.2-waypoint-v2-multitarget-stable` | jueves, 3 de julio de 2026 | Commit + tag git estable pre-Paso3 | Estable (pre entity targets) |
 | `v0.1.0-dev` | viernes, 3 de julio de 2026, 12:22 `-05:00` | Documentación alineada con el source V2 | Archivo |

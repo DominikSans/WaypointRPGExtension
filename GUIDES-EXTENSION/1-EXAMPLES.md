@@ -1,7 +1,7 @@
 # Examples — WaypointRPGExtension V2
 
-> **Versión:** `v0.3.0`  
-> **Descripción:** referencia breve de campos y ejemplos de uso del esquema V2, incluye entity targets (Paso 3) y zone trigger V2 (Paso 4).  
+> **Versión:** `v0.4.0`  
+> **Descripción:** referencia breve de campos y ejemplos de uso del esquema V2, incluye entity targets (Paso 3), zone trigger V2 (Paso 4) y BetterHUD bridge V2 (Paso 5).  
 > **Modificado:** jueves, 3 de julio de 2026 (America/Lima).
 
 Use `tracked_locatable_waypoint` como hijo de una audiencia. Como entry raíz se aplica a todos los jugadores.
@@ -696,6 +696,111 @@ Dispara `quest_npc_arrived` la primera vez que el jugador llega al radio del NPC
 ```
 
 Con `maxTargets=5` monitorea hasta 5 objectives simultáneos. Cada uno genera su propio evento al entrar/salir.
+
+---
+
+---
+
+## waypoint_betterhud_bridge — V2
+
+Sincroniza targets activos V2 con puntos de brújula de BetterHUD. Soporta objectives, entity targets y Typewriter NPCs.
+
+### Fields
+
+| Field | Tipo | Default | Descripción |
+|---|---|---|---|
+| `iconName` | String | `"default"` | Nombre del elemento de brújula en el layout BetterHUD. |
+| `pointNamePrefix` | String | `"waypoint_"` | Prefijo de los IDs de punto. `entry.id` se agrega automáticamente. |
+| `updateIntervalTicks` | Int | `10` | Frecuencia de sync en ticks. 5–10 para entidades en movimiento. |
+| `targetMode` | Enum | `ANY_ACTIVE_TARGET` | `OBJECTIVES_ONLY`, `ENTITIES_ONLY` o `ANY_ACTIVE_TARGET`. |
+| `maxTargets` | Int | `5` | Máximo de puntos enviados simultáneamente a BetterHUD. |
+| `selection` | Enum | `CLOSEST` | `CLOSEST` o `HIGHEST_PRIORITY`. |
+| `arriveRadius` | Double | `0.0` | Radio en bloques para ocultar el punto al llegar. 0 = nunca ocultar. |
+| `entityTargets` | List | `[]` | Entities/NPCs adicionales. Mismo formato que `integrations.entityTargets`. |
+| `pointText` | Var\<String\> | `""` | Texto etiqueta (depende del layout BetterHUD). |
+| `pointSubText` | Var\<String\> | `""` | Sub-etiqueta (depende del layout BetterHUD). |
+
+### Ejemplo mínimo — 1 objective
+
+```json
+{
+  "type": "waypoint_betterhud_bridge",
+  "id": "bhud_main",
+  "iconName": "quest",
+  "updateIntervalTicks": 10,
+  "targetMode": "OBJECTIVES_ONLY",
+  "maxTargets": 1
+}
+```
+
+### Ejemplo — múltiples objectives + HIGHEST_PRIORITY
+
+```json
+{
+  "type": "waypoint_betterhud_bridge",
+  "id": "bhud_quests",
+  "iconName": "quest",
+  "updateIntervalTicks": 10,
+  "targetMode": "OBJECTIVES_ONLY",
+  "maxTargets": 3,
+  "selection": "HIGHEST_PRIORITY"
+}
+```
+
+### Ejemplo — entity target SCOREBOARD_TAG (mob en movimiento)
+
+`updateIntervalTicks: 5` para que la posición del mob se actualice frecuentemente en el HUD.
+
+```json
+{
+  "type": "waypoint_betterhud_bridge",
+  "id": "bhud_escort",
+  "iconName": "escort",
+  "updateIntervalTicks": 5,
+  "targetMode": "ENTITIES_ONLY",
+  "maxTargets": 1,
+  "entityTargets": [
+    {
+      "targetType": "SCOREBOARD_TAG",
+      "tag": "quest_escort",
+      "displayName": "",
+      "maxDistance": 300.0,
+      "priority": 0
+    }
+  ]
+}
+```
+
+### Ejemplo — Typewriter NPC + hideOnArrive
+
+Oculta el punto de brújula cuando el jugador llega a menos de 3 bloques del NPC.
+
+```json
+{
+  "type": "waypoint_betterhud_bridge",
+  "id": "bhud_oliver",
+  "iconName": "npc",
+  "updateIntervalTicks": 5,
+  "targetMode": "ENTITIES_ONLY",
+  "maxTargets": 1,
+  "arriveRadius": 3.0,
+  "entityTargets": [
+    {
+      "targetType": "TYPEWRITER_NPC",
+      "npcEntryId": "oliver_npc",
+      "displayName": "",
+      "priority": 0
+    }
+  ]
+}
+```
+
+### Notas importantes
+
+- **BetterHUD ausente**: si BetterHUD no está instalado, el bridge se desactiva silenciosamente con un solo warning en consola (`[WaypointRPG] BetterHUD not found. waypoint_betterhud_bridge is disabled.`).
+- **Texto en HUD**: `pointText`/`pointSubText` son visibles en el panel Typewriter pero el texto real se configura en el layout de BetterHUD, no desde el entry.
+- **Dos bridges**: si se crean dos entries de `waypoint_betterhud_bridge`, usan `entry.id` distinto en el `pointId` — sin colisión.
+- **IDs estables**: el `pointId` usa `zoneKey()` (UUID/sourceId/posición) en lugar de index. El orden puede cambiar sin causar flicker o puntos duplicados.
 
 ---
 

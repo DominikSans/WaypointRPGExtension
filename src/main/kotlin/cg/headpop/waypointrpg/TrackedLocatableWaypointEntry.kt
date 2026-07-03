@@ -1634,3 +1634,55 @@ internal fun resolveTypewriterNpcTarget(et: EntityWaypointTarget, player: Player
         )
     }.getOrNull()
 }
+
+// Shared resolver — used by TrackedLocatableWaypointDisplay, WaypointZoneTriggerDisplay,
+// and WaypointBetterHudBridgeDisplay so target resolution logic stays in one place.
+internal fun resolveWaypointTargets(
+    player: Player,
+    selection: WaypointTargetSelection,
+    maxTargets: Int,
+    entityTargets: List<EntityWaypointTarget> = emptyList(),
+    includeObjectives: Boolean = true,
+    includeEntities: Boolean = true,
+): List<WaypointTarget> {
+    if (maxTargets <= 0) return emptyList()
+    val playerLoc = player.location
+
+    val objectives: List<WaypointTarget> = if (includeObjectives) {
+        player.trackedShowingObjectives()
+            .filterIsInstance<LocatableObjective>()
+            .flatMap { objective ->
+                objective.positions(player).mapNotNull { position ->
+                    val loc = runCatching { position.toBukkitLocation() }.getOrNull() ?: return@mapNotNull null
+                    if (loc.world != playerLoc.world) return@mapNotNull null
+                    WaypointTarget(
+                        objective = objective, position = position, location = loc,
+                        distance = playerLoc.distance(loc),
+                    )
+                }
+            }
+            .toList()
+    } else emptyList()
+
+    val entities: List<WaypointTarget> = if (includeEntities) {
+        entityTargets.mapNotNull { resolveEntityTarget(it, player) }
+    } else emptyList()
+
+    val all = objectives + entities
+    if (all.isEmpty()) return emptyList()
+
+    return when (selection) {
+        WaypointTargetSelection.CLOSEST ->
+            all.sortedWith(
+                compareBy<WaypointTarget> { it.distance }
+                    .thenByDescending { it.objective?.priority ?: it.entityPriority }
+                    .thenBy { it.objective?.id ?: it.customName ?: "" }
+            )
+        WaypointTargetSelection.HIGHEST_PRIORITY ->
+            all.sortedWith(
+                compareByDescending<WaypointTarget> { it.objective?.priority ?: it.entityPriority }
+                    .thenBy { it.distance }
+                    .thenBy { it.objective?.id ?: it.customName ?: "" }
+            )
+    }.take(maxTargets)
+}
