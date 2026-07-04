@@ -281,6 +281,14 @@ enum class EntityTargetType {
 data class WaypointRoute(
     @Help("Objective ID this route applies to.")
     val objectiveId: String = "",
+    @Help("Unique ID for this route within the entry. Leave blank to use objectiveId. Useful when sharing route state across entries (zone trigger, BetterHUD bridge).")
+    val routeId: String = "",
+    @Help("If true, advancing past one route point can skip points the player passes through simultaneously. If false, player must reach each point in strict order.")
+    val allowSkip: Boolean = true,
+    @Help("Clear route progress when the objective disappears (e.g. quest step deactivated). Player restarts from point 0 when the objective reactivates.")
+    val resetOnObjectiveChange: Boolean = true,
+    @Help("Reset route progress back to point 0 when the last route point is reached, instead of continuing to the final objective.")
+    val resetOnComplete: Boolean = false,
     @Help("Intermediate waypoints along the path to guide the player.")
     val points: List<WaypointRoutePoint> = emptyList(),
 )
@@ -405,10 +413,18 @@ private class WaypointSlot {
 
 private class PlayerWaypointState {
     val slots = LinkedHashMap<String, WaypointSlot>()
-    val routeIndices = HashMap<String, Int>()
     var lastPlayerLocation: Location? = null
     var staleCleanupDone = false
 }
+
+// Global route index registry — shared across all entry types so visual, zone trigger,
+// and BetterHUD bridge all see the same progress for a given player+objective+route.
+// Key: "$playerUUID:$objectiveId:$effectiveRouteId"
+// Only TrackedLocatableWaypointDisplay writes (advances) this. Others read only.
+internal val globalRouteIndices = ConcurrentHashMap<String, Int>()
+
+internal fun routeStateKey(playerUUID: java.util.UUID, objectiveId: String, effectiveRouteId: String): String =
+    "$playerUUID:$objectiveId:$effectiveRouteId"
 
 // =============================================================================
 // Display
@@ -436,6 +452,8 @@ private class TrackedLocatableWaypointDisplay(
 
     override fun onPlayerRemove(player: Player) {
         val state = states.remove(player.uniqueId) ?: return
+        val uuidPrefix = "${player.uniqueId}:"
+        globalRouteIndices.keys.removeIf { it.startsWith(uuidPrefix) }
         runSync { destroyAllSlots(player, state) }
     }
 
@@ -489,6 +507,15 @@ private class TrackedLocatableWaypointDisplay(
             destroyBeamSlot(player, slot.beam)
             destroyFakeDisplay(player, slot.label)
             destroyFakeDisplay(player, slot.symbol)
+            // Clear route progress if objective disappeared and resetOnObjectiveChange is set
+            if (!key.startsWith("entity:")) {
+                val objectiveId = key.substringBefore(":")
+                val route = entry.routes.firstOrNull { it.objectiveId == objectiveId }
+                if (route != null && route.resetOnObjectiveChange) {
+                    val effectiveId = route.routeId.ifBlank { objectiveId }
+                    globalRouteIndices.remove(routeStateKey(player.uniqueId, objectiveId, effectiveId))
+                }
+            }
         }
 
         if (targets.isEmpty()) {
@@ -722,7 +749,9 @@ private class TrackedLocatableWaypointDisplay(
         } else if (shouldUpdateTransform && visualAnchor != null) {
             val labelPos = visualAnchor.clone().add(lateralVec).toLocation(player.world)
             updateLabel(player, slot, labelPos, markerName, distance, directionArrow, 1.0f, labelInterp, finalOpacity, index, total,
-                isEntityTarget = target.entityUUID != null, entityTypeName = target.entityTypeName)
+                isEntityTarget = target.entityUUID != null, entityTypeName = target.entityTypeName,
+                routePointIndex = target.routePointIndex, routePointCount = target.routePointCount,
+                routePointName = target.routePointName)
         }
 
         // --- Symbol ---
@@ -833,36 +862,69 @@ private class TrackedLocatableWaypointDisplay(
 
         return sorted
             .take(entry.general.maxTargets)
-            .map { applyRoute(player, state, it) }
+            .map { applyRoute(player, it) }
     }
 
     // resolveEntityTarget, resolveTypewriterNpcTarget, findEntityByUuid — package-level below class
 
-    private fun applyRoute(player: Player, state: PlayerWaypointState, directTarget: WaypointTarget): WaypointTarget {
+    private fun applyRoute(player: Player, directTarget: WaypointTarget): WaypointTarget {
         if (directTarget.entityUUID != null) return directTarget
         val objectiveId = directTarget.objective?.id ?: return directTarget
         val route = entry.routes.firstOrNull { it.objectiveId == objectiveId && it.points.isNotEmpty() }
             ?: return directTarget
 
-        val resolvedPoints = route.points.mapIndexedNotNull { index, point ->
+        val effectiveRouteId = route.routeId.ifBlank { objectiveId }
+        val key = routeStateKey(player.uniqueId, objectiveId, effectiveRouteId)
+
+        val resolvedPoints = route.points.mapIndexedNotNull { idx, point ->
             val position = runCatching { point.position.get(player) }.getOrNull() ?: return@mapIndexedNotNull null
             val location = runCatching { position.toBukkitLocation() }.getOrNull() ?: return@mapIndexedNotNull null
-            ResolvedRoutePoint(index, point, position, location)
+            ResolvedRoutePoint(idx, point, position, location)
         }
         if (resolvedPoints.isEmpty()) return directTarget
 
-        var index = state.routeIndices.getOrDefault(objectiveId, 0).coerceIn(0, resolvedPoints.size)
+        var index = globalRouteIndices.getOrDefault(key, 0).coerceIn(0, resolvedPoints.size)
         val playerLocation = player.location
-        for (resolved in resolvedPoints) {
-            if (resolved.index < index) continue
-            if (resolved.location.world != playerLocation.world) continue
-            if (playerLocation.distance(resolved.location) <= resolved.point.radius.coerceAtLeast(0.1))
-                index = resolved.index + 1
-        }
-        state.routeIndices[objectiveId] = index.coerceIn(0, resolvedPoints.size)
 
-        val nextPoint = resolvedPoints.firstOrNull { it.index >= state.routeIndices[objectiveId]!! }
-            ?: return directTarget
+        if (route.allowSkip) {
+            for (resolved in resolvedPoints) {
+                if (resolved.index < index) continue
+                if (resolved.location.world != playerLocation.world) continue
+                if (playerLocation.distance(resolved.location) <= resolved.point.radius.coerceAtLeast(0.1))
+                    index = resolved.index + 1
+            }
+        } else {
+            val current = resolvedPoints.firstOrNull { it.index == index }
+            if (current != null && current.location.world == playerLocation.world &&
+                playerLocation.distance(current.location) <= current.point.radius.coerceAtLeast(0.1)) {
+                index++
+            }
+        }
+        index = index.coerceIn(0, resolvedPoints.size)
+
+        if (index >= resolvedPoints.size) {
+            if (route.resetOnComplete) {
+                globalRouteIndices[key] = 0
+                val first = resolvedPoints.first()
+                val dist = if (first.location.world == playerLocation.world)
+                    playerLocation.distance(first.location) else Double.POSITIVE_INFINITY
+                val pointName = runCatching { first.point.name.get(player) }.getOrNull().orEmpty()
+                return WaypointTarget(
+                    objective = directTarget.objective,
+                    position = first.position,
+                    location = first.location,
+                    distance = dist,
+                    routePointIndex = 0,
+                    routePointCount = resolvedPoints.size,
+                    routePointName = pointName,
+                )
+            }
+            globalRouteIndices[key] = resolvedPoints.size
+            return directTarget
+        }
+
+        globalRouteIndices[key] = index
+        val nextPoint = resolvedPoints.first { it.index >= index }
         val dist = if (nextPoint.location.world == playerLocation.world)
             playerLocation.distance(nextPoint.location) else Double.POSITIVE_INFINITY
         val pointName = runCatching { nextPoint.point.name.get(player) }.getOrNull().orEmpty()
@@ -1270,9 +1332,17 @@ private class TrackedLocatableWaypointDisplay(
         total: Int = 1,
         isEntityTarget: Boolean = false,
         entityTypeName: String? = null,
+        routePointIndex: Int? = null,
+        routePointCount: Int = 0,
+        routePointName: String? = null,
     ) {
         val isFirstFrame = !slot.label.isSpawned || slot.label.firstFrame
         if (!slot.label.isSpawned) spawnFakeText(player, slot.label, location.x, location.y, location.z)
+
+        val routeIndex1 = if (routePointIndex != null) (routePointIndex + 1).toString() else ""
+        val routeTotal = if (routePointIndex != null) routePointCount.toString() else ""
+        val routeName = routePointName.orEmpty()
+        val routeRemaining = if (routePointIndex != null) (routePointCount - routePointIndex).toString() else ""
 
         val rawText = entry.label.text.get(player)
             .replace("{name}", markerName)
@@ -1283,6 +1353,10 @@ private class TrackedLocatableWaypointDisplay(
             .replace("{target_type}", if (isEntityTarget) "entity" else "objective")
             .replace("{entity_name}", if (isEntityTarget) markerName else "")
             .replace("{entity_type}", entityTypeName ?: "")
+            .replace("{route_index}", routeIndex1)
+            .replace("{route_total}", routeTotal)
+            .replace("{route_name}", routeName)
+            .replace("{route_remaining}", routeRemaining)
         val text = parseMiniMessage(rawText)
         val showBg = entry.label.background && entry.general.mode != WaypointType.BOTH
         val bgColor = if (showBg) parseColorARGB(entry.label.bgColor, 128, 0, 0, 0) else 0
@@ -1465,6 +1539,40 @@ internal data class WaypointTarget(
     val entityTypeName: String? = null,
     val sourceId: String? = null,
 )
+
+// Read-only route application for zone trigger and BetterHUD.
+// Does NOT advance the route index — only the visual display (TrackedLocatableWaypointDisplay) advances.
+internal fun applyRouteReadOnly(
+    player: Player,
+    objectiveId: String,
+    routes: List<WaypointRoute>,
+    directTarget: WaypointTarget,
+): WaypointTarget {
+    val route = routes.firstOrNull { it.objectiveId == objectiveId && it.points.isNotEmpty() }
+        ?: return directTarget
+    val effectiveRouteId = route.routeId.ifBlank { objectiveId }
+    val key = routeStateKey(player.uniqueId, objectiveId, effectiveRouteId)
+    val index = globalRouteIndices.getOrDefault(key, 0)
+
+    val resolvedPoints = route.points.mapIndexedNotNull { idx, point ->
+        val position = runCatching { point.position.get(player) }.getOrNull() ?: return@mapIndexedNotNull null
+        val location = runCatching { position.toBukkitLocation() }.getOrNull() ?: return@mapIndexedNotNull null
+        Triple(idx, point, Pair(position, location))
+    }
+    val nextPoint = resolvedPoints.firstOrNull { it.first >= index } ?: return directTarget
+    val (pos, loc) = nextPoint.third
+    val dist = if (loc.world == player.location.world) player.location.distance(loc) else Double.POSITIVE_INFINITY
+    val pointName = runCatching { nextPoint.second.name.get(player) }.getOrNull().orEmpty()
+    return WaypointTarget(
+        objective = directTarget.objective,
+        position = pos,
+        location = loc,
+        distance = dist,
+        routePointIndex = nextPoint.first,
+        routePointCount = resolvedPoints.size,
+        routePointName = pointName,
+    )
+}
 
 // Stable key for zone-trigger per-target tracking.
 // Entity UUID when available; NPC entry id via sourceId; otherwise objective+position.

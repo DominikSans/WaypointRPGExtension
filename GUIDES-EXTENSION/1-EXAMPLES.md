@@ -75,7 +75,7 @@ Use `tracked_locatable_waypoint` como hijo de una audiencia. Como entry raíz se
 | Sección | Fields |
 |---|---|
 | `bob` | `enabled`, `height`, `speed`: oscilación vertical. |
-| `routes` | `objectiveId` y `points` con `name`, `position`, `radius`. |
+| `routes` | `objectiveId`, `routeId`, `allowSkip`, `resetOnObjectiveChange`, `resetOnComplete`, `points` con `name`, `position`, `radius`. Placeholders: `{route_index}`, `{route_total}`, `{route_name}`, `{route_remaining}`. |
 | `integrations` | `entityTargets` (ver abajo), `entityGlow`, `glowRange`. |
 | `performance` | `lazyUpdate`, `cleanupOnJoin`, `cleanupRadius`. |
 
@@ -612,13 +612,14 @@ Dispara triggers al entrar/salir del radio de targets activos del sistema V2: lo
 |---|---|---|---|
 | `radius` | Double | `5.0` | Radio en bloques. |
 | `checkIntervalTicks` | Int | `5` | Intervalo de verificación en ticks (1–100). |
-| `targetMode` | Enum | `ANY_ACTIVE_TARGET` | `OBJECTIVES_ONLY` solo objectives; `ANY_ACTIVE_TARGET` objectives + entityTargets. |
+| `targetMode` | Enum | `ANY_ACTIVE_TARGET` | `OBJECTIVES_ONLY` solo objectives; `ANY_ACTIVE_TARGET` objectives + entityTargets; `ACTIVE_ROUTE_POINT` trigger en el route point activo (requiere `routes`). |
 | `maxTargets` | Int | `5` | Máximo de targets considerados (0 = desactivado). Debe coincidir con `general.maxTargets` del waypoint entry. |
 | `selection` | Enum | `CLOSEST` | Orden antes de aplicar maxTargets: `CLOSEST` o `HIGHEST_PRIORITY`. |
 | `triggerPerTarget` | Bool | `false` | `false`: un solo onEnter/onExit si ANY target cambia. `true`: onEnter/onExit por cada target key individual. |
 | `triggerOnce` | Bool | `false` | `true`: onEnter solo se dispara una vez por key hasta que el jugador salga y resetOnExit sea true. |
 | `resetOnExit` | Bool | `true` | `true`: al salir resetea el guard de triggerOnce, permitiendo re-trigger. |
 | `entityTargets` | List | `[]` | Lista de entity/NPC targets extra (mismo formato que `integrations.entityTargets`). Solo aplica con `ANY_ACTIVE_TARGET`. |
+| `routes` | List | `[]` | Definición de rutas para `ACTIVE_ROUTE_POINT`. Mismo formato que `routes` del visual entry. Comparte índice de ruta vía `globalRouteIndices`. |
 | `onEnter` | Ref | emptyRef | Trigger al entrar en el radio de un target. |
 | `onExit` | Ref | emptyRef | Trigger al salir o cuando el target desaparece. |
 
@@ -696,7 +697,72 @@ Dispara `quest_npc_arrived` la primera vez que el jugador llega al radio del NPC
 
 Con `maxTargets=5` monitorea hasta 5 objectives simultáneos. Cada uno genera su propio evento al entrar/salir.
 
+### Ejemplo — ACTIVE_ROUTE_POINT
+
+Dispara trigger al llegar al route point activo. El índice es el mismo que mueve el visual entry (comparten `globalRouteIndices`). Configura `routes` con los mismos datos que el visual entry.
+
+```json
+{
+  "type": "waypoint_zone_trigger",
+  "id": "zt_herrero_route",
+  "radius": 3.0,
+  "checkIntervalTicks": 5,
+  "targetMode": "ACTIVE_ROUTE_POINT",
+  "maxTargets": 1,
+  "triggerOnce": true,
+  "resetOnExit": false,
+  "routes": [
+    {
+      "objectiveId": "obj_herrero",
+      "routeId": "herrero_route",
+      "allowSkip": false,
+      "points": [
+        { "name": "Cruza el puente", "position": { "world": "world", "x": 100, "y": 64, "z": 200 }, "radius": 3.0 },
+        { "name": "Sube las escaleras", "position": { "world": "world", "x": 150, "y": 70, "z": 250 }, "radius": 3.0 }
+      ]
+    }
+  ],
+  "onEnter": "herrero_checkpoint_reached"
+}
+```
+
 ---
+
+## routes V2 — ruta manual de 3 puntos
+
+```json
+"routes": [
+  {
+    "objectiveId": "obj_herrero",
+    "routeId": "herrero_route",
+    "allowSkip": false,
+    "resetOnObjectiveChange": true,
+    "resetOnComplete": false,
+    "points": [
+      {
+        "name": "<yellow>Cruza el puente</yellow>",
+        "position": { "world": "world", "x": 100, "y": 64, "z": 200 },
+        "radius": 3.0
+      },
+      {
+        "name": "<yellow>Sube las escaleras</yellow>",
+        "position": { "world": "world", "x": 150, "y": 70, "z": 250 },
+        "radius": 3.0
+      },
+      {
+        "name": "<yellow>Habla con el herrero</yellow>",
+        "position": { "world": "world", "x": 180, "y": 65, "z": 280 },
+        "radius": 2.5
+      }
+    ]
+  }
+]
+```
+
+Label con placeholders de ruta:
+```json
+"text": "<white>{route_name}</white>\n<gold>{distance}</gold> <gray>({route_index}/{route_total})</gray>"
+```
 
 ---
 

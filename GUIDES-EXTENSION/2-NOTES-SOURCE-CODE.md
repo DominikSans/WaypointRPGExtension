@@ -1,6 +1,6 @@
 # Notes — Source Code
 
-> **Versión:** `v0.4.0-dev`  
+> **Versión:** `v0.6.0-dev`  
 > **Descripción:** migración, problemas, soluciones, warnings y extractos del código.  
 > **Modificado:** jueves, 3 de julio de 2026 (America/Lima).
 
@@ -107,6 +107,36 @@ Los NPCs de Typewriter son fake entities gestionadas por EntityLib (packets). No
 
 `entityTypeName` = `entity.type.name` (ej. `"ZOMBIE"`, `"PLAYER"`, `"ARMOR_STAND"`).
 
+## Routes V2 — diseño interno (Paso 6 nuevo)
+
+**Problema previo**: `routeIndices` era `HashMap<String, Int>` local a `PlayerWaypointState` en el visual display. Zone trigger y BetterHUD no tenían acceso → cada entry tenía estado de ruta independiente.
+
+**`globalRouteIndices: ConcurrentHashMap<String, Int>`** (package-level `internal`): almacén compartido. Key: `"$playerUUID:$objectiveId:$effectiveRouteId"`. Solo `TrackedLocatableWaypointDisplay.applyRoute` escribe (avanza). Zone trigger y BetterHUD leen vía `applyRouteReadOnly`.
+
+**`routeStateKey(playerUUID, objectiveId, effectiveRouteId)`**: helper package-level para construir la key. `effectiveRouteId = routeId.ifBlank { objectiveId }`.
+
+**`applyRoute(player, directTarget)`** (TrackedLocatableWaypointDisplay): reemplaza firma anterior `(player, state, directTarget)`. Ya no usa `state.routeIndices`. Lee+escribe `globalRouteIndices`.
+- `allowSkip=true` (default): mismo comportamiento anterior — avanza por cualquier punto en radio.
+- `allowSkip=false`: solo avanza el punto en `index == currentIndex`.
+- `resetOnComplete=false` (default): al completar ruta, devuelve `directTarget` (objective final).
+- `resetOnComplete=true`: al completar, resetea a 0 y devuelve primer punto.
+
+**`applyRouteReadOnly(player, objectiveId, routes, directTarget)`** (package-level `internal`): lee `globalRouteIndices[key]` sin modificar. Devuelve el target apuntando al route point activo. Retorna `directTarget` si no hay ruta o route completo. Usado por zone trigger y BetterHUD.
+
+**`resetOnObjectiveChange`**: en stale slot cleanup, si `key !in activeKeys` y `!key.startsWith("entity:")`, extrae `objectiveId = key.substringBefore(":")`, busca route con ese objectiveId, y si `resetOnObjectiveChange=true` → `globalRouteIndices.remove(routeStateKey(...))`. El índice se limpia cuando el objective desaparece.
+
+**Cleanup por jugador**: `onPlayerRemove` → `globalRouteIndices.keys.removeIf { it.startsWith("$playerUUID:") }`. Evita acumulación de claves stale.
+
+**`PlayerWaypointState.routeIndices`**: eliminado. Toda la state está en `globalRouteIndices`.
+
+**Zone trigger `ACTIVE_ROUTE_POINT`**: nuevo valor en `ZoneTriggerTargetMode`. En `resolveZoneTargets`, si este modo activo, aplica `applyRouteReadOnly` a cada objective target. El trigger zona se mueve con el route point activo sin avanzar el índice. Solo el visual display avanza.
+
+**Zone trigger `routes` field**: necesario para `ACTIVE_ROUTE_POINT`. Mismos datos que el visual entry. El índice compartido via `globalRouteIndices` garantiza que ambos apunten al mismo punto aunque sean entries distintos.
+
+**BetterHUD `routes` field**: si configurado, `resolveTargets` aplica `applyRouteReadOnly` a cada objetivo. Punto BetterHUD sigue el route point activo. Misma mecánica de índice compartido.
+
+**Placeholders de ruta**: `{route_index}`, `{route_total}`, `{route_name}`, `{route_remaining}`. Se rellenan en `updateLabel` si `target.routePointIndex != null`. Vacíos si target es entity o no tiene ruta.
+
 ## BetterHUD Bridge — diseño interno (Paso 5)
 
 `WaypointBetterHudBridgeDisplay` reemplaza el bridge V1 (solo objectives, index-based IDs) con soporte completo V2.
@@ -156,7 +186,7 @@ Cuando targets desaparecen mid-session: ya no están en `effectiveInRadius` → 
 - `NAME` y `SCOREBOARD_TAG` llaman `world.entities` cada resolución — evitar en listas largas con `tickRate` bajo.
 - Los índices de ruta pueden conservarse al reactivar un objective.
 - La escala del symbol usa distancia 3D; snap usa distancia horizontal.
-- Zone trigger y BetterHUD usan targets directos, no puntos de ruta.
+- Zone trigger y BetterHUD usan `applyRouteReadOnly` (read-only). Solo el visual display avanza el índice en `globalRouteIndices`.
 - BetterHUD `PointedLocation` no acepta texto vía API — `pointText`/`pointSubText` son campos de panel pero el texto real se configura en el layout BetterHUD.
 - El glow escribe shared flags `0x40`/`0x00`.
 

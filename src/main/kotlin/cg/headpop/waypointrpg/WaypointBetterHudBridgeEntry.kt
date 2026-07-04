@@ -71,6 +71,9 @@ class WaypointBetterHudBridgeEntry(
     @Help("Entity and Typewriter NPC targets to include. Same format as integrations.entityTargets in tracked_locatable_waypoint. Requires targetMode = ANY_ACTIVE_TARGET or ENTITIES_ONLY.")
     val entityTargets: List<EntityWaypointTarget> = emptyList(),
 
+    @Help("Route definitions for syncing route point positions instead of final objective positions. Configure the same routes as in your tracked_locatable_waypoint entry — the bridge reads the shared route index written by the visual entry, so both always point to the same route step.")
+    val routes: List<WaypointRoute> = emptyList(),
+
     @Help("Label text for the compass point. Supports {name}, {distance}, {index}, {total}, {target_type}, {entity_name}, {entity_type}. Actual rendering depends on BetterHUD layout configuration.")
     @Colored @Placeholder
     val pointText: Var<String> = ConstVar(""),
@@ -114,14 +117,21 @@ private class WaypointBetterHudBridgeDisplay(
 
     // --- Target resolution ---
 
-    private fun resolveTargets(player: Player): List<WaypointTarget> = resolveWaypointTargets(
-        player = player,
-        selection = entry.selection,
-        maxTargets = entry.maxTargets,
-        entityTargets = entry.entityTargets,
-        includeObjectives = entry.targetMode != BetterHudTargetMode.ENTITIES_ONLY,
-        includeEntities = entry.targetMode != BetterHudTargetMode.OBJECTIVES_ONLY,
-    )
+    private fun resolveTargets(player: Player): List<WaypointTarget> {
+        val raw = resolveWaypointTargets(
+            player = player,
+            selection = entry.selection,
+            maxTargets = entry.maxTargets,
+            entityTargets = entry.entityTargets,
+            includeObjectives = entry.targetMode != BetterHudTargetMode.ENTITIES_ONLY,
+            includeEntities = entry.targetMode != BetterHudTargetMode.OBJECTIVES_ONLY,
+        )
+        if (entry.routes.isEmpty()) return raw
+        return raw.map { target ->
+            val objectiveId = target.objective?.id ?: return@map target
+            applyRouteReadOnly(player, objectiveId, entry.routes, target)
+        }
+    }
 
     // Stable point ID: prefix + entry.id + target.zoneKey().
     // entry.id prevents collision when multiple bridge entries are active.
