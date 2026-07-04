@@ -75,7 +75,6 @@ Use `tracked_locatable_waypoint` como hijo de una audiencia. Como entry raíz se
 | Sección | Fields |
 |---|---|
 | `bob` | `enabled`, `height`, `speed`: oscilación vertical. |
-| `trail` | `enabled`, `range`, `spacing`, `color`, `size`, `wave`, `waveWidth`, `waveCycles`, `waveSpeed`. Es línea directa, no pathfinding. |
 | `routes` | `objectiveId` y `points` con `name`, `position`, `radius`. |
 | `integrations` | `entityTargets` (ver abajo), `entityGlow`, `glowRange`. |
 | `performance` | `lazyUpdate`, `cleanupOnJoin`, `cleanupRadius`. |
@@ -891,17 +890,6 @@ El jar compilado en `build/libs/WaypointRPGExtension-1.0.0.jar` contiene el sche
     "enabled": true,
     "height": 0.06,
     "speed": 1.2
-  },
-  "trail": {
-    "enabled": false,
-    "range": 60.0,
-    "spacing": 2.5,
-    "color": "#00ff88",
-    "size": 0.8,
-    "wave": false,
-    "waveWidth": 0.4,
-    "waveCycles": 1.5,
-    "waveSpeed": 1.0
   },
   "routes": [],
   "integrations": {

@@ -39,7 +39,6 @@ import org.bukkit.Bukkit
 import org.bukkit.Color
 import org.bukkit.Location
 import org.bukkit.Material
-import org.bukkit.Particle
 import org.bukkit.entity.BlockDisplay
 import org.bukkit.entity.Entity
 import org.bukkit.entity.Player
@@ -73,7 +72,7 @@ data class WaypointGeneralConfig(
     @Help("Max objectives to show simultaneously. Set to 2+ for players with multiple active quests.")
     val maxTargets: Int = 5,
 
-    @Help("Server ticks between beam and trail updates. 5 = 4 updates/sec. Label tracks every tick regardless.")
+    @Help("Server ticks between beam updates. 5 = 4 updates/sec. Label tracks every tick regardless.")
     val tickRate: Int = 5,
 
     @Help("3D distance (blocks) at which the player is considered to have arrived at the objective.")
@@ -239,34 +238,6 @@ data class WaypointBobConfig(
     val speed: Double = 1.2,
 )
 
-data class WaypointTrailConfig(
-    @Help("Draw a ground particle trail from the player toward the objective. Direct line only — does not follow terrain obstacles.")
-    val enabled: Boolean = false,
-
-    @Help("Only draw the trail within this distance from the player.")
-    val range: Double = 60.0,
-
-    @Help("Blocks between each trail particle dot. Lower = denser. Max 100 particles per update.")
-    val spacing: Double = 2.5,
-
-    @Help("Trail particle color in hex #RRGGBB.")
-    val color: String = "#00ff88",
-
-    @Help("Trail particle size (0.1–4.0).")
-    val size: Float = 0.8f,
-
-    @Help("Animate the trail as a traveling sine wave rolling toward the objective.")
-    val wave: Boolean = false,
-
-    @Help("Wave lateral swing amplitude in blocks.")
-    val waveWidth: Double = 0.4,
-
-    @Help("Number of complete wave cycles along the full trail length.")
-    val waveCycles: Double = 1.5,
-
-    @Help("Wave travel speed in cycles per second.")
-    val waveSpeed: Double = 1.0,
-)
 
 data class WaypointIntegrationConfig(
     @Help("Live entities to track as waypoints (escort quests, moving targets). Each gets its own beam and label.")
@@ -376,9 +347,6 @@ class TrackedLocatableWaypointEntry(
 
     @Help("Floating bob animation for label and symbol.")
     val bob: WaypointBobConfig = WaypointBobConfig(),
-
-    @Help("Ground particle trail from the player toward the objective.")
-    val trail: WaypointTrailConfig = WaypointTrailConfig(),
 
     @Help("Manual route waypoints per objective ID. Guides the player along a path instead of a straight line.")
     val routes: List<WaypointRoute> = emptyList(),
@@ -822,10 +790,6 @@ private class TrackedLocatableWaypointDisplay(
             }
         }
 
-        // --- Path trail (full ticks only) ---
-        if (entry.trail.enabled && fullUpdate) {
-            spawnPathParticles(player, playerEyes, targetLocation, distance)
-        }
     }
 
     // --- Target resolution ---
@@ -1366,42 +1330,6 @@ private class TrackedLocatableWaypointDisplay(
                 entityId, listOf(EntityData(0, EntityDataTypes.BYTE, flags))
             ))
         }.onFailure { Bukkit.getLogger().warning("[WaypointRPG] setEntityGlow(id=$entityId) failed: ${it.message}") }
-    }
-
-    // --- Path trail ---
-
-    private fun spawnPathParticles(player: Player, from: Location, to: Location, distance: Double) {
-        if (distance > entry.trail.range) return
-        val world = from.world ?: return
-        val spacing = entry.trail.spacing.coerceAtLeast(0.5)
-        val steps = (distance / spacing).toInt().coerceIn(1, 100)
-        val rgb = parseRGB(entry.trail.color)
-        val dust = Particle.DustOptions(rgb, entry.trail.size.coerceIn(0.1f, 4f))
-
-        val ddx = to.x - from.x
-        val ddz = to.z - from.z
-        val pathLen = sqrt(ddx * ddx + ddz * ddz)
-        val perpX = if (pathLen > 0.01) -ddz / pathLen else 0.0
-        val perpZ = if (pathLen > 0.01) ddx / pathLen else 0.0
-        val time = System.currentTimeMillis() / 1000.0
-
-        for (i in 1 until steps) {
-            val t = i.toDouble() / steps
-            var px = lerp(from.x, to.x, t)
-            var pz = lerp(from.z, to.z, t)
-            var extraY = 0.0
-
-            if (entry.trail.wave) {
-                val phase = t * 2.0 * PI * entry.trail.waveCycles - time * entry.trail.waveSpeed * 2.0 * PI
-                val wave = sin(phase) * entry.trail.waveWidth
-                px += perpX * wave
-                pz += perpZ * wave
-                extraY = abs(wave) * 0.4
-            }
-
-            val blockY = world.getHighestBlockYAt(px.toInt(), pz.toInt()).toDouble()
-            player.spawnParticle(Particle.DUST, px, blockY + 1.1 + extraY, pz, 1, 0.0, 0.0, 0.0, 0.0, dust)
-        }
     }
 
     // --- Helpers ---

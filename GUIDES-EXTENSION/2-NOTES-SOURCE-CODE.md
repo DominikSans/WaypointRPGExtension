@@ -24,7 +24,6 @@ Las configuraciones nuevas deben usar `tracked_locatable_waypoint`.
 | `symbolEnabled`, `symbolText`, etc. | `symbol.*` |
 | `beamOuter`, `beamInner`, etc. | `beam.*` |
 | `bobHeight`, `bobSpeed` | `bob.*` |
-| `pathTrail`, `trailRange`, etc. | `trail.*` |
 | `entityTargets`, `entityGlow` | `integrations.*` |
 | `lazyUpdate`, `cleanupOnJoin` | `performance.*` |
 
@@ -157,7 +156,6 @@ Cuando targets desaparecen mid-session: ya no están en `effectiveInRadius` → 
 - `NAME` y `SCOREBOARD_TAG` llaman `world.entities` cada resolución — evitar en listas largas con `tickRate` bajo.
 - Los índices de ruta pueden conservarse al reactivar un objective.
 - La escala del symbol usa distancia 3D; snap usa distancia horizontal.
-- El trail no es pathfinding y puede atravesar obstáculos.
 - Zone trigger y BetterHUD usan targets directos, no puntos de ruta.
 - BetterHUD `PointedLocation` no acepta texto vía API — `pointText`/`pointSubText` son campos de panel pero el texto real se configura en el layout BetterHUD.
 - El glow escribe shared flags `0x40`/`0x00`.

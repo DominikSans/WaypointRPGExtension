@@ -145,9 +145,6 @@ class SimpleTrackedWaypointEntry(
                 height = bobHeight,
                 speed = bobSpeed,
             ),
-            trail = WaypointTrailConfig(
-                enabled = false,
-            ),
             routes = emptyList(),
             integrations = WaypointIntegrationConfig(
                 entityTargets = emptyList(),

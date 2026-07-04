@@ -27,7 +27,7 @@
 
 Implementado alrededor del martes, 30 de junio de 2026. La hora exacta no quedó registrada.
 
-V2 reemplazó el constructor plano por las secciones `general`, `target`, `label`, `symbol`, `beam`, `bob`, `trail`, `routes`, `integrations` y `performance`.
+V2 reemplazó el constructor plano por las secciones `general`, `target`, `label`, `symbol`, `beam`, `bob`, `routes`, `integrations` y `performance`.
 
 Fue un breaking change para JSON V1 avanzados. `simple_tracked_waypoint` quedó como adaptador deprecado. Además incorporó:
 
