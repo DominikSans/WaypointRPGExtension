@@ -1,8 +1,8 @@
 # Examples — WaypointRPGExtension V2
 
-> **Versión:** `v0.4.0`  
+> **Versión:** `v0.7.0-dev`  
 > **Descripción:** referencia breve de campos y ejemplos de uso del esquema V2, incluye entity targets (Paso 3), zone trigger V2 (Paso 4) y BetterHUD bridge V2 (Paso 5).  
-> **Modificado:** jueves, 3 de julio de 2026 (America/Lima).
+> **Modificado:** sábado, 4 de julio de 2026, 21:04 `(-05:00)` (America/Lima).
 
 Use `tracked_locatable_waypoint` como hijo de una audiencia. Como entry raíz se aplica a todos los jugadores.
 
@@ -782,8 +782,6 @@ Sincroniza targets activos V2 con puntos de brújula de BetterHUD. Soporta objec
 | `selection` | Enum | `CLOSEST` | `CLOSEST` o `HIGHEST_PRIORITY`. |
 | `arriveRadius` | Double | `0.0` | Radio en bloques para ocultar el punto al llegar. 0 = nunca ocultar. |
 | `entityTargets` | List | `[]` | Entities/NPCs adicionales. Mismo formato que `integrations.entityTargets`. |
-| `pointText` | Var\<String\> | `""` | Texto etiqueta (depende del layout BetterHUD). |
-| `pointSubText` | Var\<String\> | `""` | Sub-etiqueta (depende del layout BetterHUD). |
 
 ### Ejemplo mínimo — 1 objective
 
@@ -863,7 +861,7 @@ Oculta el punto de brújula cuando el jugador llega a menos de 3 bloques del NPC
 ### Notas importantes
 
 - **BetterHUD ausente**: si BetterHUD no está instalado, el bridge se desactiva silenciosamente con un solo warning en consola (`[WaypointRPG] BetterHUD not found. waypoint_betterhud_bridge is disabled.`).
-- **Texto en HUD**: `pointText`/`pointSubText` son visibles en el panel Typewriter pero el texto real se configura en el layout de BetterHUD, no desde el entry.
+- **Texto en HUD**: se configura directamente en el layout de BetterHUD; la API del bridge no admite texto dinámico por punto.
 - **Dos bridges**: si se crean dos entries de `waypoint_betterhud_bridge`, usan `entry.id` distinto en el `pointId` — sin colisión.
 - **IDs estables**: el `pointId` usa `zoneKey()` (UUID/sourceId/posición) en lugar de index. El orden puede cambiar sin causar flicker o puntos duplicados.
 

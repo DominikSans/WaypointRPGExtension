@@ -1,17 +1,13 @@
 package cg.headpop.waypointrpg
 
 import com.typewritermc.core.books.pages.Colors
-import com.typewritermc.core.extension.annotations.Colored
 import com.typewritermc.core.extension.annotations.Entry
 import com.typewritermc.core.extension.annotations.Help
 import com.typewritermc.core.extension.annotations.Max
 import com.typewritermc.core.extension.annotations.Min
-import com.typewritermc.core.extension.annotations.Placeholder
 import com.typewritermc.engine.paper.entry.entries.AudienceDisplay
 import com.typewritermc.engine.paper.entry.entries.AudienceEntry
-import com.typewritermc.engine.paper.entry.entries.ConstVar
 import com.typewritermc.engine.paper.entry.entries.TickableDisplay
-import com.typewritermc.engine.paper.entry.entries.Var
 import com.typewritermc.engine.paper.plugin
 import kr.toxicity.hud.api.BetterHudAPI
 import kr.toxicity.hud.api.adapter.LocationWrapper
@@ -74,13 +70,6 @@ class WaypointBetterHudBridgeEntry(
     @Help("Route definitions for syncing route point positions instead of final objective positions. Configure the same routes as in your tracked_locatable_waypoint entry — the bridge reads the shared route index written by the visual entry, so both always point to the same route step.")
     val routes: List<WaypointRoute> = emptyList(),
 
-    @Help("Label text for the compass point. Supports {name}, {distance}, {index}, {total}, {target_type}, {entity_name}, {entity_type}. Actual rendering depends on BetterHUD layout configuration.")
-    @Colored @Placeholder
-    val pointText: Var<String> = ConstVar(""),
-
-    @Help("Sub-label for the compass point. BetterHUD layout must expose this field to render it.")
-    @Colored @Placeholder
-    val pointSubText: Var<String> = ConstVar(""),
 ) : AudienceEntry {
     override suspend fun display(): AudienceDisplay = WaypointBetterHudBridgeDisplay(this)
 }
@@ -179,7 +168,13 @@ private class WaypointBetterHudBridgeDisplay(
             val loc = target.location
             val worldName = loc.world?.name ?: continue
             val newPos = Triple(loc.x, loc.y, loc.z)
-            val posChanged = state.knownPositions[id] != newPos
+            // Re-add only when the target moved a meaningful amount. Exact comparison made
+            // every moving entity churn a remove+add each sync (compass pointer flicker);
+            // half a block is below the compass angular resolution anyway.
+            val posChanged = state.knownPositions[id]?.let { (px, py, pz) ->
+                val dx = loc.x - px; val dy = loc.y - py; val dz = loc.z - pz
+                dx * dx + dy * dy + dz * dz > 0.25
+            } ?: true
             val isNew = id !in state.activeIds
 
             if (isNew || posChanged) {

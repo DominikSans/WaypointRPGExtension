@@ -1,8 +1,8 @@
 # waypoint_betterhud_bridge — V2 Reference
 
-> **Versión:** `v0.4.0-dev`  
+> **Versión:** `v0.7.0-dev`  
 > **Descripción:** Referencia completa del entry `waypoint_betterhud_bridge` V2.  
-> **Modificado:** jueves, 3 de julio de 2026 (America/Lima).
+> **Modificado:** sábado, 4 de julio de 2026, 21:04 `(-05:00)` (America/Lima).
 
 ## Qué hace
 
@@ -31,10 +31,7 @@ Si BetterHUD no está instalado, el bridge se desactiva silenciosamente con **un
 | `selection` | Enum | `CLOSEST` | Orden antes de `maxTargets`: `CLOSEST` o `HIGHEST_PRIORITY`. |
 | `arriveRadius` | `Double` | `0.0` | Oculta el punto cuando `distance <= arriveRadius`. 0 = nunca ocultar. |
 | `entityTargets` | `List<EntityWaypointTarget>` | `[]` | Entities/NPCs extra. Requiere `targetMode = ANY_ACTIVE_TARGET` o `ENTITIES_ONLY`. |
-| `pointText` | `Var<String>` | `""` | Texto etiqueta del punto (ver nota). |
-| `pointSubText` | `Var<String>` | `""` | Sub-etiqueta del punto (ver nota). |
-
-> **Nota sobre pointText/pointSubText:** La API de BetterHUD `PointedLocation` no acepta texto desde código. Estos campos son visibles en el panel Typewriter para futura extensión, pero el texto real se configura en el archivo de layout de BetterHUD.
+El texto visible se configura en el layout de BetterHUD. La API `PointedLocation` solo acepta ID, icono y ubicación, por lo que el entry no expone campos de texto sin efecto.
 
 ---
 
