@@ -72,19 +72,19 @@ import kotlin.math.sqrt
 // =============================================================================
 
 data class WaypointGeneralConfig(
-    @Help("What elements to display.")
+    @Help("Which visual elements to show: HOLOGRAM, BEAM, or BOTH.")
     val mode: WaypointType = WaypointType.BOTH,
 
-    @Help("Sort order when multiple objectives are active.")
+    @Help("Which objective to show when multiple are active simultaneously.")
     val selection: WaypointTargetSelection = WaypointTargetSelection.HIGHEST_PRIORITY,
 
-    @Help("Max simultaneous objectives shown. 0 = none.")
+    @Help("Maximum number of objectives shown at once. 0 = none.")
     val maxTargets: Int = 5,
 
-    @Help("Arrival distance in blocks (3D).")
+    @Help("3D distance in blocks at which the player is considered arrived.")
     val arriveRadius: Double = 1.5,
 
-    @Help("Hide beam and label on arrival. Symbol stays.")
+    @Help("Hide beam and text on arrival. Icon stays visible.")
     val hideOnArrive: Boolean = true,
 )
 
@@ -92,102 +92,102 @@ data class WaypointTargetConfig(
     @Help("Y offset above the objective. 2.0 = NPC head height.")
     val offset: Double = 0.0,
 
-    @Help("Y difference that activates the up/down arrow and vertical beam.")
+    @Help("Y gap that switches to the vertical column mode and up/down arrow.")
     val verticalThreshold: Double = 10.0,
 )
 
 data class WaypointLabelConfig(
-    @Help("Label text. MiniMessage tokens: {name} {distance} {direction} {index} {total} {route_index} {route_total} {route_name}.")
+    @Help("Text content. Tokens: {name} {distance} {direction} {index} {total} {route_index} {route_total} {route_name}.")
     @Colored @Placeholder
     val text: Var<String> = ConstVar("<white>{name}</white>\n<gold>{distance}</gold>"),
 
-    @Help("Fill {name} with the objective's display name.")
+    @Help("Use the objective's display name for {name}.")
     val useObjectiveName: Boolean = true,
 
-    @Help("Y offset above the anchor.")
+    @Help("Height above the player's eye level.")
     val height: Double = 1.0,
 
-    @Help("Max follow distance from camera to label (blocks).")
+    @Help("Distance from the camera to the text (blocks).")
     val floatDist: Double = 5.0,
 
-    @Help("Hide label within this horizontal distance. Icon takes over.")
+    @Help("Hide text when closer than this distance (blocks). Icon takes over.")
     val hideRange: Double = 8.0,
 
-    @Help("Label fades outside this look angle. 0 = always show.")
+    @Help("Fade when looking away past this angle. 0 = always visible.")
     val fov: Double = 55.0,
 
     @Help("Text scale.")
     val scale: Float = 1.0f,
 
-    @Help("Which direction the label faces.")
+    @Help("Which direction the text faces.")
     val billboard: BillboardMode = BillboardMode.CENTER,
 
-    @Help("Text alignment inside the label.")
+    @Help("Text alignment.")
     val align: TextAlignMode = TextAlignMode.CENTER,
 
-    @Help("Background behind text. Hidden automatically with beam.")
+    @Help("Show background panel behind text.")
     val background: Boolean = true,
 
-    @Help("Background color (#AARRGGBB).")
+    @Help("Background color in #AARRGGBB format.")
     val bgColor: String = "#80000000",
 
-    @Help("Text opacity 0–255.")
+    @Help("Text opacity (0–255).")
     val opacity: Int = 255,
 
-    @Help("Drop shadow.")
+    @Help("Drop shadow on text.")
     val shadow: Boolean = true,
 
-    @Help("Reserved — no effect in this version.")
+    @Help("No effect in this version.")
     val seeThrough: Boolean = false,
 
     @Help("Line wrap width in pixels.")
     val lineWidth: Int = 255,
 
-    @Help("Side gap between multiple waypoint labels (blocks).")
+    @Help("Side gap between labels when showing multiple targets (blocks).")
     val multiOffset: Double = 0.35,
 )
 
 data class WaypointSymbolConfig(
-    @Help("Show scaling icon above the label.")
+    @Help("Show a scaling icon above the text.")
     val enabled: Boolean = true,
 
     @Help("Icon content. MiniMessage. Custom font glyphs supported.")
     @Colored @Placeholder
     val text: Var<String> = ConstVar("<gold>◆</gold>"),
 
-    @Help("Scale when near (snapped).")
+    @Help("Icon scale when near the waypoint (snapped).")
     val minScale: Float = 3.0f,
 
-    @Help("Scale when far.")
+    @Help("Icon scale when far from the waypoint.")
     val maxScale: Float = 5.0f,
 
-    @Help("Start growing past this distance.")
+    @Help("Start growing the icon past this distance.")
     val nearDist: Double = 5.0,
 
-    @Help("Reach full size at this distance.")
+    @Help("Reach full icon size at this distance.")
     val farDist: Double = 150.0,
 
-    @Help("Y offset above the label in follow mode.")
+    @Help("Y offset above the text in follow mode.")
     val offset: Double = 0.5,
 
-    @Help("Snap icon to waypoint when closer than this.")
+    @Help("Snap icon to the waypoint when closer than this distance.")
     val snapRange: Double = 8.0,
 
-    @Help("Leave snap when farther than this. Must be > snapRange.")
+    @Help("Leave snap mode when farther than this distance. Must be > snapRange.")
     val snapLeave: Double = 12.0,
 
-    @Help("Y above the target when snapped or arrived.")
+    @Help("Y above the waypoint when snapped or arrived.")
     val snapHeight: Double = 3.0,
 )
 
 data class WaypointBeamFollowConfig(
-    @Help("Hold at objective when closer than this distance.")
+    @Help("Keep the beam on the waypoint within this distance.")
     val staticRange: Double = 30.0,
 
-    @Help("Follow the player when farther than this distance.")
+    @Help("Move the beam with the player past this distance.")
     val followRange: Double = 60.0,
 
-    @Help("Offset ahead of the player in follow mode (blocks).")
+    @Help("How far ahead of the player the beam appears (blocks).")
     val followDist: Double = 55.0,
 )
 
@@ -195,10 +195,10 @@ data class WaypointBeamConfig(
     @Help("Show the vertical beam.")
     val enabled: Boolean = true,
 
-    @Help("Ignore light levels (fullbright). Translucent blocks still blend with sky.")
+    @Help("Render at full brightness regardless of light level.")
     val fullBright: Boolean = true,
 
-    @Help("Beacon spin — inner layer rotates slowly. Outer stays fixed.")
+    @Help("Spin the inner beam core like a beacon. Outer layer stays fixed.")
     val rotateLikeBeacon: Boolean = false,
 
     @Help("Outer layer material (solid blocks only).")
@@ -219,10 +219,10 @@ data class WaypointBeamConfig(
     @Help("Inner layer depth (Z, blocks).")
     val coreDepth: Float = 0.25f,
 
-    @Help("Column height in blocks. Extended down if Dynamic Height is on.")
+    @Help("Column height in blocks.")
     val height: Float = 150.0f,
 
-    @Help("Extend down to the player's Y level (for elevated or underground targets).")
+    @Help("Extend the beam to cover height differences between player and target.")
     val dynamicHeight: Boolean = true,
 
     @Help("Beam follow behavior.")
@@ -236,36 +236,36 @@ data class WaypointBeamConfig(
 )
 
 data class WaypointBobConfig(
-    @Help("Enable bob animation on label and icon.")
+    @Help("Enable float motion on text and icon.")
     val enabled: Boolean = true,
 
     @Help("Oscillation range in blocks.")
     val height: Double = 0.06,
 
-    @Help("Cycles per second.")
+    @Help("Oscillation speed in cycles per second.")
     val speed: Double = 1.2,
 )
 
 
 data class WaypointIntegrationConfig(
-    @Help("Live entity targets (escort quests, moving targets).")
+    @Help("Entity targets to track (escort quests, moving targets).")
     val entityTargets: List<EntityWaypointTarget> = emptyList(),
 
-    @Help("Client-side glow outline on entity targets.")
+    @Help("Show a glow outline on entity targets.")
     val entityGlow: Boolean = false,
 
-    @Help("Glow activation distance in blocks.")
+    @Help("Distance at which the glow activates (blocks).")
     val glowRange: Double = 20.0,
 )
 
 data class WaypointPerformanceConfig(
-    @Help("Skip packets when nothing moves. Disabled if bob is on.")
+    @Help("Skip visual updates when nothing moves. Disable if float motion is on.")
     val lazyUpdate: Boolean = false,
 
-    @Help("Remove stale display entities on player join.")
+    @Help("Remove orphaned display entities on player join.")
     val cleanupOnJoin: Boolean = false,
 
-    @Help("Search radius for cleanup.")
+    @Help("Search radius for orphan cleanup (blocks).")
     val cleanupRadius: Double = 50.0,
 )
 
@@ -287,13 +287,13 @@ enum class EntityTargetType {
 data class WaypointRoute(
     @Help("Objective ID this route applies to.")
     val objectiveId: String = "",
-    @Help("Shared route key. Blank = objectiveId. Match across entries to sync.")
+    @Help("Shared key to sync progress across entries. Blank uses objectiveId.")
     val routeId: String = "",
-    @Help("Allow skipping checkpoints when passing out of order.")
+    @Help("Allow advancing by passing any point, not just the current one.")
     val allowSkip: Boolean = true,
     @Help("Reset progress when the objective deactivates.")
     val resetOnObjectiveChange: Boolean = true,
-    @Help("Loop from point 0 after the last point instead of showing the objective.")
+    @Help("Loop back to the first point after the last instead of showing the objective.")
     val resetOnComplete: Boolean = false,
     @Help("Waypoints along the path.")
     val points: List<WaypointRoutePoint> = emptyList(),
@@ -336,7 +336,7 @@ data class WaypointRoutePoint(
 
 @Entry(
     "tracked_locatable_waypoint",
-    "Beam and label waypoint for active quest objectives.",
+    "Beam and text waypoint that tracks active quest objectives.",
     Colors.YELLOW,
     "mdi:map-marker"
 )
@@ -344,31 +344,31 @@ class TrackedLocatableWaypointEntry(
     override val id: String = "",
     override val name: String = "",
 
-    @Help("Mode, targeting, and arrival settings.")
+    @Help("Display mode, targeting, and arrival settings.")
     val general: WaypointGeneralConfig = WaypointGeneralConfig(),
 
-    @Help("Y offset and vertical detection threshold.")
+    @Help("Height offset and vertical detection.")
     val target: WaypointTargetConfig = WaypointTargetConfig(),
 
     @Help("Floating text label.")
     val label: WaypointLabelConfig = WaypointLabelConfig(),
 
-    @Help("Scaling icon.")
+    @Help("Scaling icon above the text.")
     val symbol: WaypointSymbolConfig = WaypointSymbolConfig(),
 
-    @Help("Vertical column beam.")
+    @Help("Vertical beam column.")
     val beam: WaypointBeamConfig = WaypointBeamConfig(),
 
-    @Help("Bob animation for label and icon.")
+    @Help("Float motion for text and icon.")
     val bob: WaypointBobConfig = WaypointBobConfig(),
 
-    @Help("Guided path waypoints per objective.")
+    @Help("Guided path points per objective.")
     val routes: List<WaypointRoute> = emptyList(),
 
     @Help("Entity targets and glow.")
     val integrations: WaypointIntegrationConfig = WaypointIntegrationConfig(),
 
-    @Help("Packet optimization and legacy cleanup.")
+    @Help("Optimization and cleanup settings.")
     val performance: WaypointPerformanceConfig = WaypointPerformanceConfig(),
 ) : AudienceEntry, PlaceholderEntry {
     override suspend fun display(): AudienceDisplay = TrackedLocatableWaypointDisplay(this)

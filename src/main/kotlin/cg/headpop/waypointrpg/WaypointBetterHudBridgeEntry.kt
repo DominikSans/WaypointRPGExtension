@@ -33,41 +33,37 @@ enum class BetterHudTargetMode {
 
 @Entry(
     "waypoint_betterhud_bridge",
-    "Sync active V2 waypoint targets (objectives, entities, Typewriter NPCs) to BetterHUD compass points.",
-    Colors.CYAN,
-    "material-symbols:assistant-navigation"
+    "Sync active waypoint targets to BetterHUD compass points.",
+    Colors.BLUE,
+    "mdi:compass"
 )
 class WaypointBetterHudBridgeEntry(
     override val id: String = "",
     override val name: String = "",
 
-    @Help("BetterHUD compass element name (configured in your BetterHUD layout).")
+    @Help("BetterHUD compass element name to update.")
     val iconName: String = "default",
 
-    @Help("Prefix for BetterHUD point names. entry.id is appended automatically — no need to make this unique per entry.")
+    @Help("Prefix for compass point IDs. The entry ID is appended automatically.")
     val pointNamePrefix: String = "waypoint_",
 
-    @Help("How often to sync targets to BetterHUD in ticks. 5 = responsive, 20 = 1 s. For moving entities use 5–10.")
-    @Min(1) @Max(200)
-    val updateIntervalTicks: Int = 10,
-
-    @Help("Which targets to sync: OBJECTIVES_ONLY, ENTITIES_ONLY, or ANY_ACTIVE_TARGET (objectives + entityTargets combined).")
+    @Help("Which targets to sync: objectives, entities, or both.")
     val targetMode: BetterHudTargetMode = BetterHudTargetMode.ANY_ACTIVE_TARGET,
 
-    @Help("Maximum targets to send to BetterHUD simultaneously. Should match general.maxTargets in tracked_locatable_waypoint. 0 = disabled.")
+    @Help("Maximum number of compass points sent at once.")
     @Min(0) @Max(32)
     val maxTargets: Int = 5,
 
-    @Help("Sort order before applying maxTargets: CLOSEST or HIGHEST_PRIORITY.")
+    @Help("Sort order when trimming to maxTargets.")
     val selection: WaypointTargetSelection = WaypointTargetSelection.CLOSEST,
 
-    @Help("Hide compass point when player is within this distance of the target. 0 = never hide.")
+    @Help("Hide the compass point when closer than this distance. 0 = always show.")
     val arriveRadius: Double = 0.0,
 
-    @Help("Entity and Typewriter NPC targets to include. Same format as integrations.entityTargets in tracked_locatable_waypoint. Requires targetMode = ANY_ACTIVE_TARGET or ENTITIES_ONLY.")
+    @Help("Entity/NPC targets to include. Requires ANY_ACTIVE_TARGET or ENTITIES_ONLY mode.")
     val entityTargets: List<EntityWaypointTarget> = emptyList(),
 
-    @Help("Route definitions for syncing route point positions instead of final objective positions. Configure the same routes as in your tracked_locatable_waypoint entry — the bridge reads the shared route index written by the visual entry, so both always point to the same route step.")
+    @Help("Route config to show route point positions instead of the final objective.")
     val routes: List<WaypointRoute> = emptyList(),
 
 ) : AudienceEntry {
@@ -79,6 +75,10 @@ private data class PlayerHudState(
     val activeIds: MutableSet<String> = mutableSetOf(),
     val knownPositions: MutableMap<String, Triple<Double, Double, Double>> = mutableMapOf(),
 )
+
+// Sync cadence is internal policy — not user-editable. 5 ticks = 0.25 s, responsive
+// for both static and moving targets without per-tick overhead.
+private const val HUD_UPDATE_INTERVAL_TICKS = 5
 
 private class WaypointBetterHudBridgeDisplay(
     private val entry: WaypointBetterHudBridgeEntry,
@@ -97,7 +97,7 @@ private class WaypointBetterHudBridgeDisplay(
     }
 
     override fun tick() {
-        if (++tickCounter % entry.updateIntervalTicks.coerceAtLeast(1) != 0) return
+        if (++tickCounter % HUD_UPDATE_INTERVAL_TICKS != 0) return
         runSync {
             if (!isActive) return@runSync
             players.forEach { syncPoints(it) }

@@ -39,50 +39,46 @@ enum class ZoneTriggerTargetMode {
 
 @Entry(
     "waypoint_zone_trigger",
-    "Fire Typewriter triggers when a player enters or exits the radius of active waypoint targets (objectives, entity targets, Typewriter NPCs).",
-    Colors.YELLOW,
-    "material-symbols:radio-button-checked"
+    "Fire triggers when a player enters or exits a waypoint target's area.",
+    Colors.RED,
+    "mdi:map-marker-radius"
 )
 class WaypointZoneTriggerEntry(
     override val id: String = "",
     override val name: String = "",
 
-    @Help("Radius in blocks. Player within this distance of any active target fires onEnter.")
+    @Help("Detection radius in blocks.")
     val radius: Double = 5.0,
 
-    @Help("Check interval in ticks. 5 = responsive; 20 = cheap. Minimum 1.")
-    @Min(1) @Max(100)
-    val checkIntervalTicks: Int = 5,
-
-    @Help("Which target pool to check: OBJECTIVES_ONLY (tracked quest objectives) or ANY_ACTIVE_TARGET (objectives + entityTargets list below).")
+    @Help("Which targets to monitor: objectives, entities, or the active route point.")
     val targetMode: ZoneTriggerTargetMode = ZoneTriggerTargetMode.ANY_ACTIVE_TARGET,
 
-    @Help("Maximum targets to consider simultaneously. Matches general.maxTargets in tracked_locatable_waypoint. 0 = disabled.")
+    @Help("Maximum number of targets checked at once.")
     @Min(0) @Max(64)
     val maxTargets: Int = 5,
 
-    @Help("How targets are sorted before applying maxTargets: CLOSEST picks nearest, HIGHEST_PRIORITY picks by objective/entity priority.")
+    @Help("Sort order when trimming to maxTargets.")
     val selection: WaypointTargetSelection = WaypointTargetSelection.CLOSEST,
 
-    @Help("If true, each target key fires its own onEnter/onExit event. If false, fires once when any target enters/exits.")
+    @Help("Fire a separate event for each target instead of one combined event.")
     val triggerPerTarget: Boolean = false,
 
-    @Help("If true, onEnter fires only once per target key until the player exits and resetOnExit is true.")
+    @Help("Fire only once per entry and hold until the player leaves.")
     val triggerOnce: Boolean = false,
 
-    @Help("If true, exiting a zone resets the triggerOnce guard so the player can re-trigger on next entry.")
+    @Help("Reset triggerOnce when the player exits the zone.")
     val resetOnExit: Boolean = true,
 
-    @Help("Extra entity/NPC targets to monitor. Same format as integrations.entityTargets in tracked_locatable_waypoint. Requires targetMode = ANY_ACTIVE_TARGET.")
+    @Help("Entity targets to monitor. Requires ANY_ACTIVE_TARGET mode.")
     val entityTargets: List<EntityWaypointTarget> = emptyList(),
 
-    @Help("Route definitions for ACTIVE_ROUTE_POINT mode. Configure the same routes as in your tracked_locatable_waypoint entry so zone trigger and visual share the same route state (via globalRouteIndices).")
+    @Help("Route config for ACTIVE_ROUTE_POINT mode. Match routeId to the visual entry.")
     val routes: List<WaypointRoute> = emptyList(),
 
-    @Help("Trigger fired when player enters a target's radius (or any target when triggerPerTarget = false).")
+    @Help("Trigger on zone entry.")
     val onEnter: Ref<TriggerableEntry> = emptyRef(),
 
-    @Help("Trigger fired when player exits a target's radius or the target disappears.")
+    @Help("Trigger on zone exit or when the target disappears.")
     val onExit: Ref<TriggerableEntry> = emptyRef(),
 ) : AudienceEntry {
     override suspend fun display(): AudienceDisplay = WaypointZoneTriggerDisplay(this)
@@ -96,6 +92,11 @@ private data class PlayerZoneState(
 )
 
 // --- Display ---
+
+// Check cadence is internal policy — not user-editable. 5 ticks = 0.25 s, responsive
+// without per-tick overhead. Zone checks are cheaper than visual updates but still do
+// a distance comparison per target per player; per-tick would waste cycles.
+private const val ZONE_CHECK_INTERVAL_TICKS = 5
 
 private class WaypointZoneTriggerDisplay(
     private val entry: WaypointZoneTriggerEntry,
@@ -116,8 +117,7 @@ private class WaypointZoneTriggerDisplay(
     }
 
     override fun tick() {
-        val interval = entry.checkIntervalTicks.coerceAtLeast(1)
-        if (++tickCounter % interval != 0) return
+        if (++tickCounter % ZONE_CHECK_INTERVAL_TICKS != 0) return
         runSync {
             if (!isActive) return@runSync
             players.forEach { checkPlayer(it) }

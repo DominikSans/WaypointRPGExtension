@@ -35,22 +35,21 @@ dependencies {
 }
 
 typewriter {
-    namespace = "waypointrpg"
+    namespace = "headpop"
 
     extension {
         name = "WaypointRPG"
-        shortDescription = "Quest waypoint markers with beacon beam and hologram for tracked objectives"
+        shortDescription = "Beam and text waypoint markers for tracked quest objectives"
         description = """
-            Created by Dominik (cg.headpop).
-            Adds a Typewriter AudienceEntry that shows each player a personal visual marker toward their
-            currently tracked locatable quest objective. Features a vertical beacon beam that stays fixed
-            at the objective when close and follows the player at a comfortable distance when far, with
-            smooth thinning on approach. Hologram text supports MiniMessage, newlines, and a subtle bob
-            animation. Manual route waypoints guide players along paths instead of through walls.
-            All visuals use TextDisplay and BlockDisplay, visible only to the specific player.
+            WaypointRPGExtension adds a Typewriter AudienceEntry that renders a personal waypoint for
+            each player's active quest objectives. A vertical beacon beam marks the location and smoothly
+            follows the player at range. A floating text label shows name, distance, and direction with
+            full MiniMessage support. An optional scaling icon hovers above the text. All visuals use
+            Display Entities (TextDisplay / BlockDisplay) and are visible only to the individual player.
+            Includes zone triggers, BetterHUD compass integration, and guided route waypoints.
         """.trimIndent()
         engineVersion = "0.9.0-beta-173"
-        channel = com.typewritermc.moduleplugin.ReleaseChannel.BETA
+        channel = com.typewritermc.moduleplugin.ReleaseChannel.RELEASE
 
         dependencies {
             dependency("typewritermc", "Quest")
