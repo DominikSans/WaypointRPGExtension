@@ -2,32 +2,16 @@
 
 > **Versión:** `v0.7.0-dev`  
 > **Descripción:** migración, problemas, soluciones, warnings y extractos del código.  
-> **Modificado:** domingo, 5 de julio de 2026, 11:35 `(-05:00)` (America/Lima).
+> **Modificado:** domingo, 5 de julio de 2026, 18:30 `(-05:00)` (America/Lima).
 
 ## Arquitectura
 
-- `TrackedLocatableWaypointEntry.kt`: modelo V2 y render PacketEvents.
-- `SimpleTrackedWaypointEntry.kt`: wrapper V1 deprecado.
+- `TrackedLocatableWaypointEntry.kt`: entry principal V2, render PacketEvents.
 - `WaypointZoneTriggerEntry.kt`: triggers de radio.
 - `WaypointBetterHudBridgeEntry.kt`: integración BetterHUD opcional.
 - Beam, label y symbol son entidades packet-only por jugador.
 
-## Notas de migración de V1/simple_tracked_waypoint
-
-Las configuraciones nuevas deben usar `tracked_locatable_waypoint`.
-
-| V1 plano | V2 agrupado |
-|---|---|
-| `mode`, `selection`, `maxTargets` | `general.*` |
-| `targetOffset`, `verticalThreshold` | `target.*` |
-| `label`, `labelScale`, etc. | `label.*` |
-| `symbolEnabled`, `symbolText`, etc. | `symbol.*` |
-| `beamOuter`, `beamInner`, etc. | `beam.*` |
-| `bobHeight`, `bobSpeed` | `bob.*` |
-| `entityTargets`, `entityGlow` | `integrations.*` |
-| `lazyUpdate`, `cleanupOnJoin` | `performance.*` |
-
-`backend` ya no existe. `showBeam` se reemplaza con `beam.enabled` y `general.mode`.
+> `simple_tracked_waypoint` (SimpleTrackedWaypointEntry) fue eliminado en fase 7. No existe adaptador de compatibilidad. Usa `tracked_locatable_waypoint` directamente.
 
 ## Problemas y soluciones
 
@@ -147,6 +131,10 @@ Los NPCs de Typewriter son fake entities gestionadas por EntityLib (packets). No
 
 **Placeholders de ruta**: `{route_index}`, `{route_total}`, `{route_name}`, `{route_remaining}`. Se rellenan en `updateLabel` si `target.routePointIndex != null`. Vacíos si target es entity o no tiene ruta.
 
+**Glyphs de `{direction}` — snippets nativos de Typewriter**: los 10 símbolos (`up/down/north/northeast/east/southeast/south/southwest/west/northwest`) son snippets del engine bajo las claves `waypoint.direction.*` en `plugins/Typewriter/snippets.yml`. Defaults: `▲ ▼ ↑ ↗ → ↘ ↓ ↙ ← ↖`. Mecánica verificada en el bytecode de `engine-paper-0.9.0` (`SnippetDatabaseImpl`): el engine escribe cada default en el yml la primera vez que se usa, sirve toda lectura desde un cache en memoria (un lookup de mapa, sin I/O de disco ni allocations por tick) y refresca con `/tw reload`. Los delegates `by snippet(...)` DEBEN declararse a nivel de archivo — `Snippet<T>` implementa `ReadOnlyProperty<Nothing?, T>`, no compila dentro de un `object`. `DirectionGlyphs.get(key)` queda como único punto de resolución (when sobre los 10 delegates). Mismo patrón que `RoadNetworkExtension` oficial (misma versión). El archivo custom anterior `direction-glyphs.yml` (en `plugins/Typewriter/`) ya no se lee; si existe, se loguea un warning una sola vez al cargar la clase.
+
+**Placeholders nativos de Typewriter para glyphs**: el entry `tracked_locatable_waypoint` expone `%typewriter_<entry-id>:direction:up%`, `%typewriter_<entry-id>:direction:north%`, etc. vía `PlaceholderEntry.parser()`. Snippets ≠ placeholders: el snippet es un valor de configuración server-side que el código lee por delegate; el placeholder es texto expandido para chat/PAPI. Ambos conviven: el placeholder resuelve leyendo el mismo `DirectionGlyphs.get`, así que un cambio en `snippets.yml` se refleja en los dos.
+
 ## Hardening visual — lifecycle, interpolación y cleanup (auditoría v0.7)
 
 **Key de slot estable para objectives con ruta**: `key()` incluía `routePointIndex` y la posición → al avanzar de punto 0 a 1, la key cambiaba y el slot completo (beam + label + symbol) se destruía y recreaba (pop brusco en cada avance). Ahora un objective con ruta configurada usa la key fija `"$objectiveId:route"` durante todo el recorrido, incluido el traspaso al objetivo final: las entidades persisten y se deslizan al siguiente punto vía teleport interpolado.
@@ -229,6 +217,116 @@ El cliente interpola entre pasos; visualmente indistinguible.
 - **Política de cadencia adaptativa endurecida**: deadband `OBJECTIVE_MOVE_EPSILON=0.01` (10× el epsilon anterior — el micro-ruido de re-resolución de Vars queda debajo) + histéresis de salida `objectiveStillResolves` (3 resolves quietos consecutivos antes de volver a 5 ticks; un mover que pausa un resolve no rebota la cadencia 1↔5).
 - **Pasada de lifecycle**: verificado sin retención — `glowBaseFlags` se limpia antes del intento de packet en todos los paths de unglow (muerte de entidad, quit, dispose); `entitySelectorCache` expira por prune de 40 ticks + refresh; `routePointCache` acotado por config y limpiado en `destroyAllSlots`/`dispose`; latches (arrive/hide/fade/vertical/snapped) todos en `clearSlotVisualState`; TTL cierra el único estado que podía vivir indefinidamente.
 
+### Clean animation final (fase 4)
+
+Commit base: `c9b8163` (fases 1–3b). Tres cambios, todos guiados por artefactos concretos en código:
+
+- **Curva continua para `alphaXZ` del anchor**: la tabla de brackets (0.55/0.70/0.85/0.90/0.95 con bordes en 0.25/0.6/1.0/1.2/2.0) cambiaba la rigidez del follow a saltos cada vez que el delta por tick cruzaba un borde — el mismo "gear shift" que ya se había eliminado de los perfiles de `smoothLocation` en fase 2. Reemplazada por `lerp(lerp(0.55, 0.95, smoothstep(0.05, 1.2, d)), 1.0, smoothstep(1.2, 2.0, d))`. Endpoints idénticos (0.55 en reposo, 0.95 en 1.2, 1.0 en 2.0) → misma firmeza, sin discontinuidades.
+- **Blend continuo para el damping vertical del anchor**: el switch binario en `|velY| > 0.45` volteaba `baseAlphaY`/`maxStepY` 4 veces por arco de salto (subida y caída cruzan el umbral en ambos sentidos). Ahora `smoothstep(0.35, 0.55, velYAbs)` mezcla los mismos endpoints (0.18→0.24 / 0.16→0.24) sobre la banda donde estaba el umbral.
+- **Metadata parcial en `sendFakeTextMeta`**: el hash único forzaba el set completo de 15 entries ante cualquier cambio. Ahora detección separada texto vs estilo runtime (scale/opacity/duration — el resto es config inmutable del entry): solo texto (el label de distancia avanza un metro) → 1 entry; solo estilo (step de escala del symbol, step de opacity por FOV) → 5 entries (8/9/10/12/26 — mismo patrón parcial que ya usaba el hide meta); ambos → parciales combinados; first frame / re-show tras hide → set completo. La metadata de entidad es sticky client-side, así que enviar solo índices dirty es el comportamiento estándar del protocolo. Counter nuevo: `partial=` en la línea de stats (`WaypointStats.partialMeta`).
+
+No tocado (justificación): el salto de escala del symbol snapped→arrived (minScale→maxScale en 1 tick de interp) es un cambio de estado deliberado que comunica la llegada — suavizarlo sería smoothing decorativo con más metas. El doble meta del first frame (duration 0→interp al segundo tick) es una vez por vida de entidad y ahora cuesta 5 entries en vez de 15.
+
+### Rotación tipo beacon vanilla (`beam.rotateLikeBeacon`, opcional, default false)
+
+Como en el beacon vanilla: **solo la capa interior rota; el vidrio exterior queda estático**. Ritmo vanilla 2.25°/tick (`BEAM_ROTATE_DEG_PER_TICK`; core cuadrado → período visual de 90° ≈ 1 s por cara).
+
+- **Mecánica**: keyframe de quaternion (index 13) cada `BEAM_ROTATE_PERIOD_TICKS=10` con `interpolation_duration` (index 9) = 10 → el cliente hace slerp continuo entre keyframes. **1 metadata cada 10 ticks (2/s) por beam** — costo trivial frente a los 40 teleports/s de un beam en follow.
+- **Firmeza intacta**: `teleport_duration` (index 10) mantiene la cadencia interna fija del beam en los keyframes → los teleports del beam siguen interpolando exactamente igual; la rotación añade cero lag posicional. Sin Y, sin bob, sin glow.
+- **Rotación sobre el eje de la columna**: la translation de centrado (−sx/2, 0, −sz/2) se rota por el mismo ángulo (`−R·c`); sin esto el BlockDisplay giraría alrededor de su esquina origen. Desviación cuerda-vs-arco del lerp de translation entre keyframes ≈ 2 % del half-width (~2 mm) — invisible.
+- **Ángulo módulo 720°** (no 360): los componentes del quaternion tienen período 720° → dot positivo entre keyframes consecutivos → el slerp del cliente nunca toma el camino largo en el wrap.
+- **Convivencia**: spawn de la capa interior ya con el ángulo actual (no barre desde 0°); re-show tras hide restaura con duration=interp al ángulo actual y el siguiente keyframe retoma el giro; escala/altura de la capa interior viajan en el keyframe (≤0.5 s de latencia en un step 1/32 de thinFactor — invisible en el core dentro del vidrio); la capa exterior mantiene el hash-gate instantáneo. Culling width ×1.5 (≥√2) para que las esquinas giradas no salgan del AABB.
+- Ángulo derivado de `tickSerial` (los beams de un jugador giran en fase; lag del servidor ralentiza el giro como el gameTime vanilla).
+
+### Cadencia interna y fluidez conjunta beam+label (fase 5)
+
+- **`beamTickRate` eliminado del panel/JSON**: ahora es política interna `INTERNAL_BEAM_TICK_RATE = 1`. El beam teleporta con `teleport_duration = 1`, exactamente igual que label y symbol (`TEXT_INTERP = 1`): los tres visuales comparten una ventana de interpolación por tick de servidor — movimiento en lockstep, cero trailing entre beam y texto. Cualquier valor mayor hacía tartamudear el beam contra el label per-tick; por eso dejó de ser configurable. JSONs viejos con el campo se ignoran silenciosamente (Gson descarta campos desconocidos).
+- **`fullUpdate` estaba muerto**: `general.tickRate` generaba el flag pero NADA lo consumía — el setting del panel no afectaba ningún visual. Re-empleado como cadencia de trabajo periódico secundario: el bloque de glow (entity lookup + alloc de location + distance por slot) ahora corre cada `tickRate` ticks (default 5 → latencia de activación 0.25 s, invisible) en vez de cada tick. Help actualizado.
+- **`fullBeamUpdate` eliminado**: con rate interno 1 era siempre true — rama, contador (`beamTickCounter`) y parámetros muertos fuera. El beam corre cada tick incondicionalmente dentro de `doUpdate`.
+- **`dynamicHeight` cuantizado con histéresis** (`BEAM_BASE_STEP=4.0`, `BEAM_BASE_RAISE_HYSTERESIS=8.0`): la base cruda (`min(pointerY, playerY) − 20`) seguía el Y del jugador continuamente — cada tick de movimiento vertical (caídas, escaleras, elytra, saltos bajo el Y del target) cambiaba `beamBaseY` (2 teleports) Y `scaleY` (hash miss → 2 transform metas): **4 packets/tick por beam para un fondo 20+ bloques bajo el jugador, sin cambio visible**. Ahora la base baja inmediato en pasos de 4 bloques (cobertura primero) y solo sube cuando la base necesaria queda 8 bloques por encima — rebotar sobre una frontera nunca la togglea. El top visible (`pointerY + height`) queda exacto. `dynBaseY` en `ActiveBeam` (NaN inicial, reset). Bonus: con `rotateLikeBeacon`, `scaleY` estable = keyframes del core sin variación parásita.
+- **Fast path de 1 target en `resolveTargets`**: el caso común (un objective, sin entity targets) se salta el sort con comparator, el `take()` y el `distinctBy` — 3 colecciones menos por jugador por tick bajo carga.
+
+### Respuesta frontal del label (fase 5b — fix de prueba manual)
+
+Síntoma reportado en servidor: con `floatDist=5`, corriendo de frente hacia el waypoint el label se atrasa/da tirones. Diagnóstico con números:
+
+- **Look-ahead muerto por unidades**: `smoothstep(0.35, 1.50, speed)` con `player.velocity` en bloques/TICK — sprint (0.28 b/t) queda debajo del edge inferior → el look-ahead nunca se activaba corriendo. Recalibrado a `smoothstep(0.18, 0.42)` (walk ~0.22, sprint ~0.28, speed/salto ~0.36+). Adelanto frontal cap 0.55 bloques (`parAdvance.coerceIn(-0.55, 0.55)`) — floatDist efectivo máx ≈ 5.5, bajo el techo de 6 que el usuario marcó como demasiado.
+- **Doble smoothing isotrópico en cascada**: anchor α≈0.59 a delta 0.28 (lag ~0.19 bloques) y encima `smoothLocation` LABEL α≈0.36 (lag ~0.29) → ~0.5 bloques de retraso estacionario que respiraba con la velocidad = tirones. El damping existe para el shimmer LATERAL (jitter de yaw girando `dir`); el avance frontal es movimiento limpio y no lo necesita.
+- **Fix: anisotropía frontal/lateral en ambas etapas.** El delta XZ se descompone en paralelo a `dir` (jugador→waypoint) y perpendicular. Paralelo pasa casi directo (anchor: 0.80→1.0 sobre `smoothstep(0.02, 0.60)`; smoothLocation LABEL/SYMBOL: 0.70→1.0 sobre `smoothstep(0.02, 0.25)`); el eje lateral conserva EXACTAMENTE las curvas anteriores → el shimmer lateral queda igual de muerto. `smoothLocation` recibe `dirX/dirZ` opcionales (0,0 = isotrópico: beam, snap, arrive, glide sin cambio).
+- Resultado calculado a sprint frontal: lag total ~0.5 → ~0.04 bloques, con α estable (0.89–1.0) en el rango — sin respiración, sin tirones. Y del label intacta (bob crisp), glide de handoff intacto.
+
+### Etapa única de smoothing + lockstep text/icon (fase 5c — fix de prueba manual)
+
+Dos residuos reportados tras 5b: (1) micro-hitch en el arranque frontal, (2) desfase entre label text y symbol en correcciones A/D.
+
+- **Causa de (2)**: label y symbol partían del mismo `visualAnchor` pero cada uno re-suavizaba por separado en `smoothLocation` con floors laterales distintos (LABEL 0.36 vs SYMBOL 0.46) y estado `previous` propio → el icon convergía ~27 % más rápido que el texto en correcciones laterales. **Fix**: en tracking normal `smoothLocation` hace passthrough para callers con `dir` (label/symbol follow) — ambos toman anchor + offset fijo → lockstep exacto. La rama de glide se conserva (handoff, snap→unsnap convergen desde su posición stale y luego entran en lockstep).
+- **Causa de (1)**: doble etapa paralela residual — anchor 0.80 × label 0.70 en deltas pequeños → respuesta neta ~0.58 en los primeros ticks de avance. **Fix**: el anchor es la ÚNICA etapa; floor paralelo 0.85, llega a 1.0 en 0.20 bloques/tick (sprint = lock total).
+- **Conservación de la vibración lateral**: floor lateral del anchor bajado a 0.20 = el neto de las dos etapas viejas (0.55 × 0.36 ≈ 0.198) → el micro-shimmer queda igual de amortiguado con una sola etapa; las correcciones A/D responden algo más firmes e idénticas para texto e icono.
+- Y del anchor (smoothedBaseY + bob) intacta; SYMBOL_SNAP, arrive, beam y glide sin cambios.
+
+### Look-ahead con desplazamiento real (fase 5d — fix de prueba manual)
+
+Residuo tras 5c: retraso frontal ligero pero visible al correr — "el label intenta ponerse en su posición pero no llega a tiempo". La causa NO era smoothing ni constantes: **`player.velocity` es poco fiable para jugadores** (movimiento client-authoritative; el motion vector del servidor subestima y retrasa el desplazamiento real — sprint reporta ~0.21 en vez de 0.28, con delay). El look-ahead — cuya función es cubrir la latencia estructural de ~2 ticks (1 de server→packet + 1 de ventana de interpolación duration-1) — entraba tarde y corto.
+
+- **Fix**: el estimador de movimiento es ahora el **delta real de `playerEyes` por tick** (contra `lastPlayerLocation`, calculado en `updatePlayerSync` antes de sobrescribir), cap ±1.0 por eje (teleports/lag spikes no catapultan el anchor). Exacto y disponible el mismo tick. Elimina además el alloc de `player.velocity`.
+- Con sprint real (0.28): `speed01 ≈ 0.42` → lookAhead ≈ 1.83 ticks → `parAdvance ≈ 0.51` — cubre la latencia estructural; el label queda clavado en vez de perseguir. Ventanas de 5b sin cambios (ya estaban calibradas en bloques/tick — solo que velocity nunca las alcanzaba).
+- `vertT` (damping vertical del anchor) también usa `|dispY|`. Bonus: parado, el desplazamiento es exactamente 0 → cero ruido de anchor (velocity tenía residuos).
+- floatDist, cap 0.55, lockstep 5c, curvas laterales: intactos.
+
+### Panel cerrado + bob desacoplado (fase 6 — fix de prueba manual)
+
+Pruebas manuales: `tickRate` 1 o 5 se ven bien, quitar `bob` reducía la sensación de lag del label. Diagnóstico y cierre:
+
+- **`general.tickRate` eliminado del panel** → `INTERNAL_SECONDARY_TICK_RATE = 5` (const privada). Solo gobernaba los checks de glow (los visuales ya iban a cada tick desde fase 5); 5 ticks = 0.25 s de latencia de activación de glow, invisible, menos trabajo que 1. Gson ignora `tickRate` en JSONs viejos.
+- **`symbol.snapPosition` eliminado del panel y del schema** → siempre centrado sobre el waypoint. Enum `SymbolSnapPosition` borrado, rama `FRONT_OF_BEAM` (push hacia el jugador) borrada del snap branch. Menos una comparación y hasta un sqrt por tick en snap.
+- **Bob desacoplado del pipeline de tracking** — la causa real de que "sin bob se sienta menos lag":
+  1. `bobY` viajaba DENTRO de las posiciones trackeadas (`rawAnchor.y`, `snapPos`, `arrivedPos`). En snap/arrive/glide pasaba por `smoothLocation`: el delta del bob (~0.023 b/t máx) quedaba bajo el floor del perfil → amplitud damped al ~70 %/tick + fase retrasada; peor, el delta del bob inflaba la `distance` del smoothing → el alpha de convergencia XZ oscilaba con la fase del bob → chase lag/micro-glitch percibido.
+  2. `calculateBob()` usaba wall clock (`System.currentTimeMillis`): con MSPT jitter la sinusoide se muestreaba a intervalos irregulares mientras el cliente interpola SIEMPRE exactamente 1 tick → velocidad vertical del bob irregular.
+  - **Fix estructural**: todo el tracking/smoothing/estado (`lastVisualAnchor`, `lastLabelLocation`, `lastSymbolLocation`) opera en posiciones SIN bob; `bobY` se suma al Y final en el momento del packet (`teleportFakeDisplay(pos, yOffset)`, spawn incluido; dedupe compara el Y final para que un cambio de fase solo también emita). Fase por `state.tickSerial` (50 ms constantes por packet → pendiente uniforme de la sinusoide lineal a trozos que renderiza el cliente). El bob ahora es capa visual pura: amplitud íntegra, fase exacta, cero contaminación del movimiento horizontal, crisp también durante glides/handoffs.
+
+### Cadencia interna del beam — decisión
+
+El follow del beam a 20 Hz con duration 1 es la única combinación que mantiene beam y label sin desfase perceptible. `beamTickRate > 1` producía: teleports del beam cada N ticks interpolados sobre N mientras el label interpola sobre 1 → el beam siempre N−1 ticks detrás del texto en movimiento lateral. Eliminado como opción para que ningún manifest pueda reintroducir ese desfase.
+
+## Remote visual compensation + vertical catch-up
+
+### Compensación de latencia remota (REMOTE_EXTRA_TICKS)
+
+En servidores con ping ≈75–80 ms la latencia visual acumulada es de ~3 ticks (1 tick server→packet + 1.5 ticks red + ~0.5 ticks interp_duration promedio). El look-ahead base `1 + 2×speed01` cubre ~1.84 ticks a sprint → déficit ≈ 1.16 ticks ≈ 0.32 bloques.
+
+`REMOTE_EXTRA_TICKS = 1.5` se suma a `lookAheadTicks` → a sprint: ticks ≈ 3.34, `parAdvance` ≈ 0.80 (cap). Para ajustar al entorno: cambia únicamente la constante privada (no el panel). En localhost el label quedará ≤0.42 bloques por delante del jugador, que es menos perceptible que el mismo lag por detrás.
+
+### smoothedHSpeed — predictor de velocidad horizontal
+
+`state.smoothedHSpeed` reemplaza `sqrt(dispX²+dispZ²)` en el cálculo de `speed01`. Ataque rápido (instant ≥ smoothed → accept), liberación de 2 ticks (un tick de XZ bajo → ×0.85; dos consecutivos → reset). Evita que un solo tick de desplazamiento reducido (arco de salto, timing de paquete) colapse `parAdvance` → desaparece el "zoom in" del label al saltar.
+
+### Fallback de eje Y para label/icon
+
+Problema: `maxStepY = 0.16 b/t` cap anterior + alpha 0.18 → convergencia ~45 s para un delta Y=220 bloques.
+
+Pipeline actualizado:
+
+1. **Y look-ahead** — `vertLookAhead = (dispY × lookAheadTicks × 0.40).coerceIn(−0.60, 0.60)`. Suma al `rawBaseY` antes del suavizado. Peso 0.40 evita amplificar la oscilación del arco de salto. Cap ±0.60 bloques.
+2. **Alpha escalado** — `baseAlphaY = lerp(0.30, 0.65, vertT)` (era 0.18–0.24); `maxStepY = lerp(0.25, 0.50, vertT)` (era 0.16–0.24). Responde ~2× más rápido sin cambiar la suavidad en reposo.
+3. **Catch-up rápido** — `|dy| ≥ LABEL_VERTICAL_CATCHUP_THRESHOLD (3 bloques)`: alpha 0.65 interpolado hasta 0.95 según la magnitud. Converge 3 bloques en ~3 ticks.
+4. **Snap instantáneo** — `|dy| ≥ LABEL_VERTICAL_SNAP_THRESHOLD (25 bloques)`: salta a `rawBaseY` directamente y establece `labelInterp = 0` para ese frame (teleport sin interpolación cliente), luego vuelve a 1.
+5. **Bob no contamina** — toda la lógica mide `rawBaseY` sin bob; el `bobY` sigue sumándose solo en el packet.
+
+`WaypointStats.labelVertCatchupCount` cuenta frames en catch-up o snap cuando debug activo.
+
+### Beam — cobertura vertical cuando el jugador está por encima del target
+
+Problema: `scaleY = pointerPos.y + height − beamBaseY` → cuando `playerY > pointerPos.y`, el beam no llega hasta el jugador.
+
+Fix: `scaleY = dynTopY − dynBaseY` donde `dynTopY` sigue `max(pointerPos.y, playerY) + height`:
+- Sube inmediatamente cuando `needTop > top` (cuantizado a pasos de BEAM_BASE_STEP=4 bloques).
+- Baja con histéresis `BEAM_TOP_RAISE_HYSTERESIS = 8` bloques (simétrico a la base).
+- `BEAM_VERTICAL_CATCHUP_THRESHOLD = 10` bloques: si el top almacenado se aleja más de 10 bloques del `needTop`, se fuerza actualización inmediata.
+- `beam.dynTopY` en `ActiveBeam` (NaN inicial, reset junto con `dynBaseY`).
+- `WaypointStats.beamTopForceCount` cuenta actualizaciones forzadas cuando debug activo.
+
+El beam ahora siempre cubre el rango vertical entre jugador y waypoint, sea cual sea la dirección.
+
 ## BetterHUD Bridge — diseño interno (Paso 5)
 
 `WaypointBetterHudBridgeDisplay` reemplaza el bridge V1 (solo objectives, index-based IDs) con soporte completo V2.
@@ -239,7 +337,7 @@ El cliente interpola entre pasos; visualmente indistinguible.
 
 **`pointIdFor(target)`**: `"${prefix}${entry.id}_${target.zoneKey()}"` sanitizado y truncado a 96 chars. Estable aunque cambie el orden de sort — no más flicker.
 
-**`PlayerHudState(activeIds, knownPositions)`**: rastrea qué puntos están activos y su última posición `Triple<Double,Double,Double>`. Si el target se mueve (entidad Bukkit, NPC Typewriter en patrol), `posChanged = knownPositions[id] != newPos` → remove + re-add del punto → posición actualizada en BetterHUD. Cambio visible al siguiente `updateIntervalTicks`.
+**`PlayerHudState(activeIds, knownPositions)`**: rastrea qué puntos están activos y su última posición `Triple<Double,Double,Double>`. Si el target se mueve (entidad Bukkit, NPC Typewriter en patrol), `posChanged = knownPositions[id] != newPos` → remove + re-add del punto → posición actualizada en BetterHUD. Cadencia interna `HUD_UPDATE_INTERVAL_TICKS = 5`.
 
 **`arriveRadius`**: puntos filtrados antes de enviar a BetterHUD. Si `target.distance <= arriveRadius` → remove del HUD si estaba activo.
 

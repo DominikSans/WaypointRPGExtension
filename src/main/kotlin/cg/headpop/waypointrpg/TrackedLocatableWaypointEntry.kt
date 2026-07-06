@@ -21,13 +21,19 @@ import com.typewritermc.core.extension.annotations.Placeholder
 import com.typewritermc.core.extension.annotations.WithRotation
 import com.typewritermc.core.utils.point.Position
 import com.typewritermc.engine.paper.entry.AudienceManager
+import com.typewritermc.engine.paper.entry.PlaceholderEntry
+import com.typewritermc.engine.paper.entry.PlaceholderParser
 import com.typewritermc.engine.paper.entry.entries.AudienceDisplay
 import com.typewritermc.engine.paper.entry.entries.AudienceEntry
 import com.typewritermc.engine.paper.entry.entries.ConstVar
 import com.typewritermc.engine.paper.entry.entries.TickableDisplay
 import com.typewritermc.engine.paper.entry.entries.Var
 import com.typewritermc.engine.paper.entry.entries.get
+import com.typewritermc.engine.paper.entry.literal
+import com.typewritermc.engine.paper.entry.placeholderParser
 import com.typewritermc.engine.paper.plugin
+import com.typewritermc.engine.paper.entry.supplyPlayer
+import com.typewritermc.engine.paper.snippets.snippet
 import com.typewritermc.engine.paper.utils.toBukkitLocation
 import org.koin.core.component.get
 import com.typewritermc.quest.entries.interfaces.LocatableObjective
@@ -46,6 +52,7 @@ import org.bukkit.entity.LivingEntity
 import org.bukkit.entity.Player
 import org.bukkit.entity.TextDisplay
 import org.bukkit.util.Vector
+import java.io.File
 import java.util.Optional
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -65,201 +72,200 @@ import kotlin.math.sqrt
 // =============================================================================
 
 data class WaypointGeneralConfig(
-    @Help("What to display: HOLOGRAM (text only), BEAM (vertical column only), or BOTH.")
+    @Help("What elements to display.")
     val mode: WaypointType = WaypointType.BOTH,
 
-    @Help("Which objective to show when multiple are active: HIGHEST_PRIORITY or CLOSEST.")
+    @Help("Sort order when multiple objectives are active.")
     val selection: WaypointTargetSelection = WaypointTargetSelection.HIGHEST_PRIORITY,
 
-    @Help("Max objectives to show simultaneously. Set to 2+ for players with multiple active quests.")
+    @Help("Max simultaneous objectives shown. 0 = none.")
     val maxTargets: Int = 5,
 
-    @Help("Server ticks between beam updates. 5 = 4 updates/sec. Label tracks every tick regardless.")
-    val tickRate: Int = 5,
-
-    @Help("3D distance (blocks) at which the player is considered to have arrived at the objective.")
+    @Help("Arrival distance in blocks (3D).")
     val arriveRadius: Double = 1.5,
 
-    @Help("Hide beam and label when player arrives. The symbol stays visible at the waypoint.")
+    @Help("Hide beam and label on arrival. Symbol stays.")
     val hideOnArrive: Boolean = true,
 )
 
 data class WaypointTargetConfig(
-    @Help("Extra Y added to the objective's base position. 0.0 for location objectives; 2.0 for head-height NPCs.")
+    @Help("Y offset above the objective. 2.0 = NPC head height.")
     val offset: Double = 0.0,
 
-    @Help("Y difference (blocks) between player and objective before {direction} shows ▲/▼ and verticalColumnMode activates.")
+    @Help("Y difference that activates the up/down arrow and vertical beam.")
     val verticalThreshold: Double = 10.0,
 )
 
 data class WaypointLabelConfig(
-    @Help("Label text. MiniMessage. Placeholders: {name}, {distance}, {direction} (↑↗→↘↓↙←↖ or ▲/▼).")
+    @Help("Label text. MiniMessage tokens: {name} {distance} {direction} {index} {total} {route_index} {route_total} {route_name}.")
     @Colored @Placeholder
     val text: Var<String> = ConstVar("<white>{name}</white>\n<gold>{distance}</gold>"),
 
-    @Help("Use the objective's display name as {name}. False = use this entry's name field.")
+    @Help("Fill {name} with the objective's display name.")
     val useObjectiveName: Boolean = true,
 
-    @Help("Extra Y the label floats above the calculated marker position.")
+    @Help("Y offset above the anchor.")
     val height: Double = 1.0,
 
-    @Help("Label floats at most this many blocks from the camera toward the objective.")
+    @Help("Max follow distance from camera to label (blocks).")
     val floatDist: Double = 5.0,
 
-    @Help("Label hides when horizontal distance to objective is smaller than this. Symbol takes over.")
+    @Help("Hide label within this horizontal distance. Icon takes over.")
     val hideRange: Double = 8.0,
 
-    @Help("Max angle (degrees) from player look direction before label fades. 0 = always visible.")
+    @Help("Label fades outside this look angle. 0 = always show.")
     val fov: Double = 55.0,
 
-    @Help("Label text scale. 1.0 = default size.")
+    @Help("Text scale.")
     val scale: Float = 1.0f,
 
-    @Help("Billboard mode: CENTER (always faces player), VERTICAL, HORIZONTAL, FIXED.")
-    val billboard: String = "CENTER",
+    @Help("Which direction the label faces.")
+    val billboard: BillboardMode = BillboardMode.CENTER,
 
-    @Help("Text alignment within the label: CENTER, LEFT or RIGHT.")
-    val align: String = "CENTER",
+    @Help("Text alignment inside the label.")
+    val align: TextAlignMode = TextAlignMode.CENTER,
 
-    @Help("Show background panel behind the text. Suppressed automatically when mode=BOTH (beam present).")
+    @Help("Background behind text. Hidden automatically with beam.")
     val background: Boolean = true,
 
-    @Help("Background color in #AARRGGBB. #80000000 = semi-transparent black.")
+    @Help("Background color (#AARRGGBB).")
     val bgColor: String = "#80000000",
 
-    @Help("Text opacity 0–255. 255 = fully opaque.")
+    @Help("Text opacity 0–255.")
     val opacity: Int = 255,
 
-    @Help("Drop shadow behind the text.")
+    @Help("Drop shadow.")
     val shadow: Boolean = true,
 
-    @Help("Reserved for a future ghost layer. The main label always renders with depth-test normal. Changing this field has no effect on the current render.")
+    @Help("Reserved — no effect in this version.")
     val seeThrough: Boolean = false,
 
-    @Help("Max line width in pixels before text wraps.")
+    @Help("Line wrap width in pixels.")
     val lineWidth: Int = 255,
 
-    @Help("Lateral spacing in blocks between labels when multiple objectives are active. 0 = no separation. Labels are spread symmetrically: with 2 targets, each shifts 0.35 left/right. Beam always points at the real target regardless of this offset.")
+    @Help("Side gap between multiple waypoint labels (blocks).")
     val multiOffset: Double = 0.35,
 )
 
 data class WaypointSymbolConfig(
-    @Help("Show a Unicode icon that scales with distance, independent of the label.")
+    @Help("Show scaling icon above the label.")
     val enabled: Boolean = true,
 
-    @Help("Symbol content. MiniMessage supported. Custom font glyphs work here.")
+    @Help("Icon content. MiniMessage. Custom font glyphs supported.")
     @Colored @Placeholder
     val text: Var<String> = ConstVar("<gold>◆</gold>"),
 
-    @Help("Symbol scale when player is close (at or below snapRange).")
+    @Help("Scale when near (snapped).")
     val minScale: Float = 3.0f,
 
-    @Help("Symbol scale when far (at farDist). Also the scale on arrive.")
+    @Help("Scale when far.")
     val maxScale: Float = 5.0f,
 
-    @Help("Distance where the symbol starts growing toward maxScale.")
+    @Help("Start growing past this distance.")
     val nearDist: Double = 5.0,
 
-    @Help("Distance where the symbol reaches maxScale.")
+    @Help("Reach full size at this distance.")
     val farDist: Double = 150.0,
 
-    @Help("Extra Y offset for the symbol above the label position during normal follow mode.")
+    @Help("Y offset above the label in follow mode.")
     val offset: Double = 0.5,
 
-    @Help("Horizontal distance at which the symbol snaps to the exact waypoint X,Z position.")
+    @Help("Snap icon to waypoint when closer than this.")
     val snapRange: Double = 8.0,
 
-    @Help("Horizontal distance at which the snapped symbol returns to normal follow mode. Must be > snapRange.")
+    @Help("Leave snap when farther than this. Must be > snapRange.")
     val snapLeave: Double = 12.0,
 
-    @Help("Y height above the target position when the symbol is snapped or on arrive.")
+    @Help("Y above the target when snapped or arrived.")
     val snapHeight: Double = 3.0,
+)
 
-    @Help("Snapped symbol position: CENTER_ON_WAYPOINT (directly above waypoint, recommended) or FRONT_OF_BEAM (offset toward player, avoids beam overlap).")
-    val snapPosition: SymbolSnapPosition = SymbolSnapPosition.CENTER_ON_WAYPOINT,
+data class WaypointBeamFollowConfig(
+    @Help("Hold at objective when closer than this distance.")
+    val staticRange: Double = 30.0,
+
+    @Help("Follow the player when farther than this distance.")
+    val followRange: Double = 60.0,
+
+    @Help("Offset ahead of the player in follow mode (blocks).")
+    val followDist: Double = 55.0,
 )
 
 data class WaypointBeamConfig(
-    @Help("Show or hide the vertical beam. When false, only label and symbol are displayed.")
+    @Help("Show the vertical beam.")
     val enabled: Boolean = true,
 
-    @Help("Force maximum brightness so the beam stays visible at night. When false, the beam uses natural world lighting. Translucent materials (stained glass) may still blend with the sky background regardless of this setting.")
+    @Help("Ignore light levels (fullbright). Translucent blocks still blend with sky.")
     val fullBright: Boolean = true,
 
-    @Help("Outer beam layer material. Visual block selector in the Typewriter panel. Must be a solid block — AIR and items fall back to LIME_STAINED_GLASS.")
+    @Help("Beacon spin — inner layer rotates slowly. Outer stays fixed.")
+    val rotateLikeBeacon: Boolean = false,
+
+    @Help("Outer layer material (solid blocks only).")
     val outer: Material = Material.LIME_STAINED_GLASS,
 
-    @Help("Inner beam layer material (rendered inside the outer layer). Must be a solid block — AIR and items fall back to LIME_CONCRETE.")
+    @Help("Inner layer material (solid blocks only).")
     val inner: Material = Material.LIME_CONCRETE,
 
-    @Help("X/Z width of the outer beam layer in blocks.")
+    @Help("Outer layer width (X/Z, blocks).")
     val width: Float = 0.5f,
 
-    @Help("X/Z width of the inner beam layer in blocks.")
+    @Help("Inner layer width (X/Z, blocks).")
     val coreWidth: Float = 0.25f,
 
-    @Help("Z depth of the outer beam layer in blocks.")
+    @Help("Outer layer depth (Z, blocks).")
     val depth: Float = 0.5f,
 
-    @Help("Z depth of the inner beam layer in blocks.")
+    @Help("Inner layer depth (Z, blocks).")
     val coreDepth: Float = 0.25f,
 
-    @Help("Beam height in blocks. Extended downward dynamically if dynamicHeight is enabled.")
+    @Help("Column height in blocks. Extended down if Dynamic Height is on.")
     val height: Float = 150.0f,
 
-    @Help("Extend beam downward to the player's Y level so it stays visible when underground.")
+    @Help("Extend down to the player's Y level (for elevated or underground targets).")
     val dynamicHeight: Boolean = true,
 
-    @Help("Within this horizontal distance the beam stays fixed at the objective.")
-    val staticRange: Double = 30.0,
+    @Help("Beam follow behavior.")
+    val follow: WaypointBeamFollowConfig = WaypointBeamFollowConfig(),
 
-    @Help("Beyond this horizontal distance the beam follows the player at followDist.")
-    val followRange: Double = 60.0,
-
-    @Help("In follow mode, beam stays this many blocks ahead of the player toward the objective.")
-    val followDist: Double = 55.0,
-
-    @Help("Beam and label start fading at this distance from the objective.")
+    @Help("Start fading at this distance from the objective.")
     val fadeStart: Double = 10.0,
 
-    @Help("Beam and label fully disappear at this distance (player is very close).")
+    @Help("Fully hidden at this distance.")
     val fadeEnd: Double = 3.0,
-
-    @Help("Server ticks between beam position updates. 1 = every tick (smoothest follow, default). Higher values reduce server load but make the beam movement choppier. Independent of general.tickRate which controls label updates.")
-    val beamTickRate: Int = 1,
 )
 
 data class WaypointBobConfig(
-    @Help("Enable the floating bob animation on the label and symbol.")
+    @Help("Enable bob animation on label and icon.")
     val enabled: Boolean = true,
 
-    @Help("Vertical oscillation amplitude in blocks. 0 = no movement.")
+    @Help("Oscillation range in blocks.")
     val height: Double = 0.06,
 
-    @Help("Bob oscillation speed in cycles per second.")
+    @Help("Cycles per second.")
     val speed: Double = 1.2,
 )
 
 
 data class WaypointIntegrationConfig(
-    @Help("Live entities to track as waypoints (escort quests, moving targets). Each gets its own beam and label.")
+    @Help("Live entity targets (escort quests, moving targets).")
     val entityTargets: List<EntityWaypointTarget> = emptyList(),
 
-    @Help("Make tracked entity targets glow with a visible outline (client-side only).")
+    @Help("Client-side glow outline on entity targets.")
     val entityGlow: Boolean = false,
 
-    @Help("Horizontal distance at which the entity glow activates. Only used when entityGlow is true.")
+    @Help("Glow activation distance in blocks.")
     val glowRange: Double = 20.0,
 )
 
 data class WaypointPerformanceConfig(
-    @Help("Skip position packets when player and target have barely moved. Has no effect when bob is enabled.")
+    @Help("Skip packets when nothing moves. Disabled if bob is on.")
     val lazyUpdate: Boolean = false,
 
-    @Help("Remove leftover display entities from old plugin versions when the player joins.")
+    @Help("Remove stale display entities on player join.")
     val cleanupOnJoin: Boolean = false,
 
-    @Help("Search radius in blocks for stale entity cleanup on join.")
+    @Help("Search radius for cleanup.")
     val cleanupRadius: Double = 50.0,
 )
 
@@ -269,10 +275,8 @@ data class WaypointPerformanceConfig(
 
 enum class WaypointType { HOLOGRAM, BEAM, BOTH }
 enum class WaypointTargetSelection { HIGHEST_PRIORITY, CLOSEST }
-enum class SymbolSnapPosition {
-    CENTER_ON_WAYPOINT,   // symbol directly above waypoint XZ (recommended)
-    FRONT_OF_BEAM,        // offset toward player by beamMaxHalf+0.15 (avoids visual overlap with beam)
-}
+enum class BillboardMode { CENTER, VERTICAL, HORIZONTAL, FIXED }
+enum class TextAlignMode { CENTER, LEFT, RIGHT }
 enum class EntityTargetType {
     UUID,            // Bukkit.getEntity(uuid) — global, fastest
     NAME,            // entity name or custom display name, nearest within maxDistance
@@ -283,46 +287,46 @@ enum class EntityTargetType {
 data class WaypointRoute(
     @Help("Objective ID this route applies to.")
     val objectiveId: String = "",
-    @Help("Unique ID for this route within the entry. Leave blank to use objectiveId. Useful when sharing route state across entries (zone trigger, BetterHUD bridge).")
+    @Help("Shared route key. Blank = objectiveId. Match across entries to sync.")
     val routeId: String = "",
-    @Help("If true, advancing past one route point can skip points the player passes through simultaneously. If false, player must reach each point in strict order.")
+    @Help("Allow skipping checkpoints when passing out of order.")
     val allowSkip: Boolean = true,
-    @Help("Clear route progress when the objective disappears (e.g. quest step deactivated). Player restarts from point 0 when the objective reactivates.")
+    @Help("Reset progress when the objective deactivates.")
     val resetOnObjectiveChange: Boolean = true,
-    @Help("Reset route progress back to point 0 when the last route point is reached, instead of continuing to the final objective.")
+    @Help("Loop from point 0 after the last point instead of showing the objective.")
     val resetOnComplete: Boolean = false,
-    @Help("Intermediate waypoints along the path to guide the player.")
+    @Help("Waypoints along the path.")
     val points: List<WaypointRoutePoint> = emptyList(),
 )
 
 data class EntityWaypointTarget(
-    @Help("How to find the entity: UUID (global, fastest), NAME (name or display name in world), SCOREBOARD_TAG (nearest entity with this scoreboard tag).")
+    @Help("How to look up this entity.")
     val targetType: EntityTargetType = EntityTargetType.UUID,
-    @Help("Entity UUID. Required when targetType=UUID. Format: 550e8400-e29b-41d4-a716-446655440000")
+    @Help("Entity UUID. Required when type = UUID.")
     val uuid: String = "",
-    @Help("Entity name or custom display name. Used when targetType=NAME.")
+    @Help("Entity name. Required when type = NAME.")
     val name: String = "",
-    @Help("Scoreboard tag. Used when targetType=SCOREBOARD_TAG. Picks nearest tagged entity within maxDistance.")
+    @Help("Scoreboard tag. Required when type = SCOREBOARD_TAG.")
     val tag: String = "",
-    @Help("Label shown on the waypoint. MiniMessage. Leave blank to use the entity's name.")
+    @Help("Label override for this target. Blank = entity name.")
     @Colored @Placeholder
     val displayName: Var<String> = ConstVar(""),
-    @Help("Search radius in blocks for NAME and SCOREBOARD_TAG. No effect for UUID or TYPEWRITER_NPC.")
+    @Help("Search radius for NAME and SCOREBOARD_TAG.")
     val maxDistance: Double = 128.0,
-    @Help("Sort priority for this entity target (HIGHEST_PRIORITY selection). Higher = shown first.")
+    @Help("Priority for HIGHEST_PRIORITY selection (higher = shown first).")
     val priority: Int = 0,
-    @Help("Typewriter NpcInstance entry ID. Required when targetType=TYPEWRITER_NPC. Copy from the entry's id field in the manifest.")
+    @Help("Typewriter NPC entry ID. Required when type = TYPEWRITER_NPC.")
     val npcEntryId: String = "",
 )
 
 data class WaypointRoutePoint(
-    @Help("Label for this route point. Blank = use objective display name.")
+    @Help("Label at this point. Blank = objective name.")
     @Colored @Placeholder
     val name: Var<String> = ConstVar(""),
-    @Help("World position of this waypoint.")
+    @Help("World position.")
     @WithRotation
     val position: Var<Position> = ConstVar(Position.ORIGIN),
-    @Help("Arrival radius in blocks to advance to the next route point.")
+    @Help("Arrival radius to advance to the next point.")
     val radius: Double = 3.0,
 )
 
@@ -332,42 +336,57 @@ data class WaypointRoutePoint(
 
 @Entry(
     "tracked_locatable_waypoint",
-    "Quest waypoint to currently tracked objectives — V2",
-    Colors.GREEN,
-    "material-symbols:assistant-navigation"
+    "Beam and label waypoint for active quest objectives.",
+    Colors.YELLOW,
+    "mdi:map-marker"
 )
 class TrackedLocatableWaypointEntry(
     override val id: String = "",
     override val name: String = "",
 
-    @Help("General display mode and targeting behavior.")
+    @Help("Mode, targeting, and arrival settings.")
     val general: WaypointGeneralConfig = WaypointGeneralConfig(),
 
-    @Help("Target position offset and vertical behavior.")
+    @Help("Y offset and vertical detection threshold.")
     val target: WaypointTargetConfig = WaypointTargetConfig(),
 
-    @Help("Floating label text above the waypoint.")
+    @Help("Floating text label.")
     val label: WaypointLabelConfig = WaypointLabelConfig(),
 
-    @Help("Distance-scaled icon that snaps to the waypoint when close.")
+    @Help("Scaling icon.")
     val symbol: WaypointSymbolConfig = WaypointSymbolConfig(),
 
-    @Help("Vertical beacon beam at the waypoint location.")
+    @Help("Vertical column beam.")
     val beam: WaypointBeamConfig = WaypointBeamConfig(),
 
-    @Help("Floating bob animation for label and symbol.")
+    @Help("Bob animation for label and icon.")
     val bob: WaypointBobConfig = WaypointBobConfig(),
 
-    @Help("Manual route waypoints per objective ID. Guides the player along a path instead of a straight line.")
+    @Help("Guided path waypoints per objective.")
     val routes: List<WaypointRoute> = emptyList(),
 
-    @Help("Entity tracking and third-party integrations.")
+    @Help("Entity targets and glow.")
     val integrations: WaypointIntegrationConfig = WaypointIntegrationConfig(),
 
-    @Help("Performance tuning — packet frequency and legacy cleanup.")
+    @Help("Packet optimization and legacy cleanup.")
     val performance: WaypointPerformanceConfig = WaypointPerformanceConfig(),
-) : AudienceEntry {
+) : AudienceEntry, PlaceholderEntry {
     override suspend fun display(): AudienceDisplay = TrackedLocatableWaypointDisplay(this)
+
+    override fun parser(): PlaceholderParser = placeholderParser {
+        literal("direction") {
+            literal("up") { supplyPlayer { _: Player -> DirectionGlyphs.get("up") } }
+            literal("down") { supplyPlayer { _: Player -> DirectionGlyphs.get("down") } }
+            literal("north") { supplyPlayer { _: Player -> DirectionGlyphs.get("north") } }
+            literal("northeast") { supplyPlayer { _: Player -> DirectionGlyphs.get("northeast") } }
+            literal("east") { supplyPlayer { _: Player -> DirectionGlyphs.get("east") } }
+            literal("southeast") { supplyPlayer { _: Player -> DirectionGlyphs.get("southeast") } }
+            literal("south") { supplyPlayer { _: Player -> DirectionGlyphs.get("south") } }
+            literal("southwest") { supplyPlayer { _: Player -> DirectionGlyphs.get("southwest") } }
+            literal("west") { supplyPlayer { _: Player -> DirectionGlyphs.get("west") } }
+            literal("northwest") { supplyPlayer { _: Player -> DirectionGlyphs.get("northwest") } }
+        }
+    }
 }
 
 // =============================================================================
@@ -386,6 +405,14 @@ private class ActiveBeam {
     var hidden: Boolean = false
     var hiddenAtTick: Long = 0L
     var lastTransformHash: Int? = null
+    // Next tickSerial at which a rotation keyframe is due (rotateLikeBeacon only).
+    var nextRotTick: Long = 0L
+    // Hash of the inner layer's scale/interp inputs at the last FULL rotate meta.
+    // null = next rotation keyframe must send the full field set (spawn, re-show, hide).
+    var lastRotHash: Int? = null
+    // Quantized dynamicHeight base/top (NaN = not yet established). See BEAM_BASE_STEP.
+    var dynBaseY: Double = Double.NaN
+    var dynTopY: Double = Double.NaN
     val isSpawned get() = id1 != -1
     fun reset() {
         id1 = -1; id2 = -1
@@ -395,6 +422,9 @@ private class ActiveBeam {
         hidden = false
         hiddenAtTick = 0L
         lastTransformHash = null
+        nextRotTick = 0L
+        lastRotHash = null
+        dynBaseY = Double.NaN; dynTopY = Double.NaN
     }
 }
 
@@ -406,14 +436,19 @@ private class FakeTextDisplay(val isSymbol: Boolean = false) {
     var firstFrame: Boolean = true
     var hidden: Boolean = false
     var hiddenAtTick: Long = 0L
-    var lastMetadataHash: Int? = null
+    // Split change detection (see sendFakeTextMeta): text identity and runtime style
+    // are tracked separately so a change in only one sends a small partial metadata
+    // packet instead of the full field set. Both null = full metadata required.
+    var lastTextId: Int? = null
+    var lastStyleHash: Int? = null
     var lastInputsHash: Int? = null
     var lastRawText: String? = null
     var lastComponent: Component? = null
     val isSpawned get() = id != -1
     fun reset() {
         id = -1; spawnX = 0.0; spawnY = 0.0; spawnZ = 0.0
-        firstFrame = true; hidden = false; hiddenAtTick = 0L; lastMetadataHash = null
+        firstFrame = true; hidden = false; hiddenAtTick = 0L
+        lastTextId = null; lastStyleHash = null
         lastInputsHash = null; lastRawText = null; lastComponent = null
     }
 }
@@ -430,12 +465,11 @@ private class WaypointSlot {
     var lastSymbolLocation: Location? = null
     var symbolSnapped: Boolean = false
     var glowEntityId: Int = -1
-    // Visibility latches — enter/leave thresholds differ so hovering exactly on a
-    // boundary never causes rapid create/destroy or hide/show flicker.
     var arrivedLatch: Boolean = false
     var labelHideLatch: Boolean = false
     var beamFadeLatch: Boolean = false
     var verticalColumnLatch: Boolean = false
+    var lastParAdvance: Double = 0.0
 }
 
 private class PlayerWaypointState {
@@ -444,17 +478,13 @@ private class PlayerWaypointState {
     var staleCleanupDone = false
     var tickSerial = 0L
     val entitySelectorCache = HashMap<String, CachedEntitySelector>()
-    // Objective resolution cache — the quest query + position Var resolution is the most
-    // expensive per-tick work per player; static objective locations don't need re-resolving
-    // every tick. Distances inside age up to the refresh interval — they only affect sort
-    // order; updateSlot recomputes real distances from the locations every tick.
     var cachedObjectiveTargets: List<WaypointTarget> = emptyList()
     var objectiveTargetsRefreshTick: Long = 0L
-    // Consecutive resolves without meaningful movement — exit hysteresis for the
-    // adaptive resolve cadence (see resolveTargets).
     var objectiveStillResolves: Int = OBJECTIVE_STILL_RESOLVES_TO_SLOW
-    // Route point resolution cache, keyed by objectiveId. Bounded by entry.routes size.
     val routePointCache = HashMap<String, CachedRoutePoints>()
+    // Stabilized horizontal speed for look-ahead (attack-fast / 2-tick release).
+    var smoothedHSpeed: Double = 0.0
+    var hSpeedZeroTicks: Int = 0
 }
 
 private data class CachedEntitySelector(
@@ -492,6 +522,17 @@ internal fun routeStateKey(playerUUID: java.util.UUID, objectiveId: String, effe
 
 private const val ENTITY_SELECTOR_REFRESH_TICKS = 10L
 private const val OBJECTIVE_RESOLVE_INTERVAL_TICKS = 5L
+// Beam update cadence is internal policy, not user config. 1 = every tick: the beam
+// teleports with teleport_duration = 1, exactly like label and symbol (TEXT_INTERP = 1),
+// so all three visuals share one interpolation window per server tick — beam and text
+// move in lockstep with zero trailing. Any higher value makes the beam stutter against
+// the per-tick label; that's why the old beamTickRate field was removed from the panel.
+private const val INTERNAL_BEAM_TICK_RATE = 1
+// Secondary periodic work cadence (entity glow range checks), internal policy — the old
+// general.tickRate field was removed from the panel because it never affected visual
+// smoothness (beam, label and symbol track every tick regardless) and exposing it only
+// invited misconfiguration. 5 ticks = 0.25 s glow activation latency, validated visually.
+private const val INTERNAL_SECONDARY_TICK_RATE = 5
 private const val ROUTE_POINT_RESOLVE_INTERVAL_TICKS = 20L
 
 // Handoff glide: deltas above START only occur when the target itself changed
@@ -515,12 +556,98 @@ private const val BEAM_GLIDE_ALPHA = 0.50
 private const val BEAM_GLIDE_MIN_STEP = 4.0
 private const val BEAM_GLIDE_MAX_ALPHA = 0.75
 
+// rotateLikeBeacon: the inner beam layer spins at the vanilla beacon rate (2.25°/tick —
+// a square core has a 90° visual period, so the full cycle reads as ~2 s).
+//
+// PERIOD must be 1. The client slerps the quaternion (the block center follows the ARC
+// of radius |c| around the column axis) but lerps the centering translation linearly
+// (the CHORD between keyframe endpoints). Between keyframes the two disagree by
+// |c|·(1−cos(Δθ/2)) — with the old 10-tick keyframes (Δθ = 22.5°) that put the core
+// ~2% of |c| off-axis mid-segment, in a direction that rotates with the spin: the core
+// visibly orbited instead of spinning pinned. Per-tick keyframes shrink Δθ to 2.25°
+// and the deviation to 0.02% of |c| (~0.03 mm) — the error is quadratic in the step.
+// The per-tick packet is slim (translation + quaternion only, see sendBeamRotateMeta);
+// duration/scale/culling ride a full packet only when they actually change.
+// teleport_duration (index 10) keeps the internal beam tick rate value, so position
+// updates stay exactly as firm as without rotation — the spin never adds positional lag.
+// Angles advance on tickSerial and are taken modulo 720°: quaternion components have a
+// 720° period, so consecutive keyframes always have a positive quaternion dot product and
+// the client's slerp can never pick the long way around at a wrap.
+private const val BEAM_ROTATE_PERIOD_TICKS = 1L
+private const val BEAM_ROTATE_DEG_PER_TICK = 2.25
+
+// dynamicHeight base quantization. The raw base (min(pointerY, playerY) − 20) followed
+// the player's Y continuously: every tick of vertical movement (falls, ladders, elytra,
+// jumps below the target Y) changed beamBaseY → 2 teleports AND scaleY → hash miss →
+// 2 transform metas. Four packets per tick for a bottom extension sitting 20+ blocks
+// below the player — zero visible change. Quantized: the base drops in whole steps the
+// moment more coverage is needed, and only rises again once the needed base sits a full
+// hysteresis band above it, so a player bouncing around one boundary never toggles it.
+private const val BEAM_BASE_STEP = 4.0
+private const val BEAM_BASE_RAISE_HYSTERESIS = 8.0
+// Top quantization mirrors base: raise immediately when player goes above target, lower
+// with hysteresis. BEAM_VERTICAL_CATCHUP_THRESHOLD forces an immediate update if stale.
+private const val BEAM_TOP_RAISE_HYSTERESIS = 8.0
+private const val BEAM_VERTICAL_CATCHUP_THRESHOLD = 10.0
+// Y catch-up thresholds for label/icon anchor (bob-free).
+// CATCHUP_THRESHOLD: fast alpha kicks in. SNAP_THRESHOLD: instant reposition + interp=0.
+private const val LABEL_VERTICAL_CATCHUP_THRESHOLD = 3.0
+private const val LABEL_VERTICAL_FAST_ALPHA = 0.65
+private const val LABEL_VERTICAL_SNAP_THRESHOLD = 25.0
+// Extra look-ahead ticks to compensate for network RTT on remote servers.
+// Set to 0.0 for localhost. 1.5 covers ~75ms ping (≈1.5 ticks at 20TPS).
+private const val REMOTE_EXTRA_TICKS = 1.5
+
 // A display hidden longer than this is unlikely to re-show soon (player parked inside
 // the arrive radius). Destroy it for real to free the client-side entity; a later
 // re-show goes through the spawn path (first-frame duration 0) which places it without
 // a streak — visually identical to a metadata re-show. Quick boundary crossings stay
 // on the cheap hide/show path.
 private const val HIDDEN_ENTITY_TTL_TICKS = 600L
+
+// Direction glyphs are Typewriter snippets (plugins/Typewriter/snippets.yml, keys
+// waypoint.direction.*) instead of panel fields: they are server-wide cosmetics, not
+// per-entry behavior. The engine writes each default on first use, serves every read
+// from an in-memory cache (one map lookup, no disk I/O, no allocation), and refreshes
+// on /tw reload. Snippet delegates must live at file level — Snippet<T> implements
+// ReadOnlyProperty<Nothing?, T>, so it cannot back a property inside an object.
+private val glyphUp        by snippet("waypoint.direction.up", "▲")
+private val glyphDown      by snippet("waypoint.direction.down", "▼")
+private val glyphNorth     by snippet("waypoint.direction.north", "↑")
+private val glyphNortheast by snippet("waypoint.direction.northeast", "↗")
+private val glyphEast      by snippet("waypoint.direction.east", "→")
+private val glyphSoutheast by snippet("waypoint.direction.southeast", "↘")
+private val glyphSouth     by snippet("waypoint.direction.south", "↓")
+private val glyphSouthwest by snippet("waypoint.direction.southwest", "↙")
+private val glyphWest      by snippet("waypoint.direction.west", "←")
+private val glyphNorthwest by snippet("waypoint.direction.northwest", "↖")
+
+private object DirectionGlyphs {
+    init {
+        // The pre-snippets custom file is no longer read; point admins at snippets.yml.
+        // One File.exists() stat, once per JVM (object init).
+        if (File(plugin.dataFolder, "direction-glyphs.yml").exists()) {
+            Bukkit.getLogger().warning(
+                "[WaypointRPG] direction-glyphs.yml is no longer used. " +
+                "Configure waypoint.direction.* in plugins/Typewriter/snippets.yml instead."
+            )
+        }
+    }
+
+    fun get(key: String): String = when (key) {
+        "up" -> glyphUp
+        "down" -> glyphDown
+        "north" -> glyphNorth
+        "northeast" -> glyphNortheast
+        "east" -> glyphEast
+        "southeast" -> glyphSoutheast
+        "south" -> glyphSouth
+        "southwest" -> glyphSouthwest
+        "west" -> glyphWest
+        "northwest" -> glyphNorthwest
+        else -> "?"
+    }
+}
 
 // Objective movement policy: 1e-3 was below visual relevance — Var re-resolution jitter
 // could pin the resolve loop at 20 Hz. 0.01 blocks between resolves is still far below
@@ -551,10 +678,18 @@ internal object WaypointStats {
     val enabled: Boolean = java.lang.Boolean.getBoolean("waypointrpg.debug")
 
     var beamTeleports = 0L; var labelTeleports = 0L; var symbolTeleports = 0L
-    var beamMeta = 0L; var labelMeta = 0L; var symbolMeta = 0L
+    var beamMeta = 0L; var labelMeta = 0L; var symbolMeta = 0L; var partialMeta = 0L
     var spawns = 0L; var destroys = 0L; var hides = 0L; var reshows = 0L
     var objectiveResolves = 0L; var selectorScans = 0L; var routeResolves = 0L
     var playerTicks = 0L; var slotUpdates = 0L
+    // Anchor smoothing error: deviation of the IIR-smoothed anchor from the raw target.
+    var anchorErrParSum = 0.0; var anchorErrLatSum = 0.0
+    var anchorErrMax = 0.0; var anchorErrOver05 = 0L; var anchorErrCount = 0L
+    var textIconSepMax = 0.0; var textIconSepSum = 0.0; var textIconSepCount = 0L
+    var lookAheadDropCount = 0L
+    var teleportSkipWhileMoving = 0L
+    var labelVertCatchupCount = 0L
+    var beamTopForceCount = 0L
     private var windowStartMillis = 0L
 
     fun maybeLog(instanceInfo: () -> String) {
@@ -564,22 +699,33 @@ internal object WaypointStats {
         val elapsedMillis = now - windowStartMillis
         if (elapsedMillis < 10_000L) return
         val s = elapsedMillis / 1000.0
+        val anchorMean = if (anchorErrCount > 0) (anchorErrParSum + anchorErrLatSum) / anchorErrCount else 0.0
+        val anchorParMean = if (anchorErrCount > 0) anchorErrParSum / anchorErrCount else 0.0
+        val anchorLatMean = if (anchorErrCount > 0) anchorErrLatSum / anchorErrCount else 0.0
+        val iconSepMean = if (textIconSepCount > 0) textIconSepSum / textIconSepCount else 0.0
         Bukkit.getLogger().info(
-            "[WaypointRPG][stats %.1fs] tp/s beam=%.1f label=%.1f symbol=%.1f | meta/s beam=%.1f label=%.1f symbol=%.1f | spawn/min=%.1f destroy/min=%.1f hide/min=%.1f reshow/min=%.1f | resolve/s obj=%.1f scan=%.1f route=%.1f | slots/player-tick=%.2f | %s routeIdx=%d".format(
+            "[WaypointRPG][stats %.1fs] tp/s beam=%.1f label=%.1f symbol=%.1f | meta/s beam=%.1f label=%.1f symbol=%.1f partial=%.1f | spawn/min=%.1f destroy/min=%.1f hide/min=%.1f reshow/min=%.1f | resolve/s obj=%.1f scan=%.1f route=%.1f | slots/player-tick=%.2f | anchor err mean=%.4f (par=%.4f lat=%.4f) max=%.4f over0.05=%d | icon-sep mean=%.5f max=%.5f | la-drop=%d tp-skip-mv=%d vcatchup=%d btopforce=%d | %s routeIdx=%d".format(
                 s,
                 beamTeleports / s, labelTeleports / s, symbolTeleports / s,
-                beamMeta / s, labelMeta / s, symbolMeta / s,
+                beamMeta / s, labelMeta / s, symbolMeta / s, partialMeta / s,
                 spawns * 60.0 / s, destroys * 60.0 / s, hides * 60.0 / s, reshows * 60.0 / s,
                 objectiveResolves / s, selectorScans / s, routeResolves / s,
                 if (playerTicks > 0) slotUpdates.toDouble() / playerTicks else 0.0,
+                anchorMean, anchorParMean, anchorLatMean, anchorErrMax, anchorErrOver05,
+                iconSepMean, textIconSepMax, lookAheadDropCount, teleportSkipWhileMoving, labelVertCatchupCount, beamTopForceCount,
                 instanceInfo(), globalRouteIndices.size,
             )
         )
         beamTeleports = 0; labelTeleports = 0; symbolTeleports = 0
-        beamMeta = 0; labelMeta = 0; symbolMeta = 0
+        beamMeta = 0; labelMeta = 0; symbolMeta = 0; partialMeta = 0
         spawns = 0; destroys = 0; hides = 0; reshows = 0
         objectiveResolves = 0; selectorScans = 0; routeResolves = 0
         playerTicks = 0; slotUpdates = 0
+        anchorErrParSum = 0.0; anchorErrLatSum = 0.0; anchorErrMax = 0.0
+        anchorErrOver05 = 0; anchorErrCount = 0
+        textIconSepMax = 0.0; textIconSepSum = 0.0; textIconSepCount = 0
+        lookAheadDropCount = 0; teleportSkipWhileMoving = 0
+        labelVertCatchupCount = 0; beamTopForceCount = 0
         windowStartMillis = now
     }
 }
@@ -597,7 +743,6 @@ private class TrackedLocatableWaypointDisplay(
     private val updateQueued = AtomicBoolean(false)
     private val glowBaseFlags = ConcurrentHashMap<String, Byte>()
     private var tickCounter = 0
-    private var beamTickCounter = 0
 
     // Static label config, parsed once — the old per-update parsing ran trim()/uppercase()
     // (two string allocs) plus a color parse per label per tick for values that are
@@ -606,9 +751,9 @@ private class TrackedLocatableWaypointDisplay(
         if (entry.label.background && entry.general.mode != WaypointType.BOTH)
             parseColorARGB(entry.label.bgColor, 128, 0, 0, 0) else 0
     private val labelAlignBits: Int =
-        when (entry.label.align.trim().uppercase()) { "LEFT" -> 8; "RIGHT" -> 16; else -> 0 }
+        when (entry.label.align) { TextAlignMode.LEFT -> 8; TextAlignMode.RIGHT -> 16; else -> 0 }
     private val labelBillboard: Byte =
-        when (entry.label.billboard.trim().uppercase()) { "FIXED" -> 0; "VERTICAL" -> 1; "HORIZONTAL" -> 2; else -> 3 }.toByte()
+        when (entry.label.billboard) { BillboardMode.FIXED -> 0; BillboardMode.VERTICAL -> 1; BillboardMode.HORIZONTAL -> 2; else -> 3 }.toByte()
 
     override fun onPlayerAdd(player: Player) {
         states.computeIfAbsent(player.uniqueId) { PlayerWaypointState() }
@@ -638,15 +783,12 @@ private class TrackedLocatableWaypointDisplay(
     }
 
     override fun tick() {
-        val interval = entry.general.tickRate.coerceAtLeast(1)
-        val fullUpdate = (++tickCounter % interval == 0)
-        val beamInterval = entry.beam.beamTickRate.coerceAtLeast(1)
-        val fullBeamUpdate = (++beamTickCounter % beamInterval == 0)
+        val fullUpdate = (++tickCounter % INTERNAL_SECONDARY_TICK_RATE == 0)
         if (!updateQueued.compareAndSet(false, true)) return
         runSync {
             updateQueued.set(false)
             if (!isActive) return@runSync
-            players.forEach { updatePlayerSync(it, force = false, fullUpdate = fullUpdate, fullBeamUpdate = fullBeamUpdate) }
+            players.forEach { updatePlayerSync(it, force = false, fullUpdate = fullUpdate) }
             WaypointStats.maybeLog {
                 var slots = 0; var selCache = 0
                 states.values.forEach { slots += it.slots.size; selCache += it.entitySelectorCache.size }
@@ -688,7 +830,7 @@ private class TrackedLocatableWaypointDisplay(
 
     // --- Main update ---
 
-    private fun updatePlayerSync(player: Player, force: Boolean, fullUpdate: Boolean = true, fullBeamUpdate: Boolean = true) {
+    private fun updatePlayerSync(player: Player, force: Boolean, fullUpdate: Boolean = true) {
         val state = states.computeIfAbsent(player.uniqueId) { PlayerWaypointState() }
         state.tickSerial++
         // Prune periodically, not per tick — building the valid-key set every tick for
@@ -697,10 +839,30 @@ private class TrackedLocatableWaypointDisplay(
         cleanupStaleDisplaysIfNeeded(player, state)
 
         val playerEyes = player.eyeLocation
-        // player.location allocates a fresh Location per call — updateSlot used to call it
-        // up to 4× per slot per tick (direction arrow, beam position, beam height, glow).
-        // Resolve once per player per tick and thread it through.
         val playerFeet = player.location
+        val lastEyes = state.lastPlayerLocation
+        val dispX: Double
+        val dispY: Double
+        val dispZ: Double
+        if (lastEyes != null && lastEyes.world == playerEyes.world) {
+            dispX = (playerEyes.x - lastEyes.x).coerceIn(-1.0, 1.0)
+            dispY = (playerEyes.y - lastEyes.y).coerceIn(-1.0, 1.0)
+            dispZ = (playerEyes.z - lastEyes.z).coerceIn(-1.0, 1.0)
+        } else {
+            dispX = 0.0; dispY = 0.0; dispZ = 0.0
+        }
+        val instantHSpeed = sqrt(dispX * dispX + dispZ * dispZ)
+        if (lastEyes == null || lastEyes.world != playerEyes.world) {
+            state.smoothedHSpeed = 0.0; state.hSpeedZeroTicks = 0
+        } else if (instantHSpeed >= state.smoothedHSpeed) {
+            state.smoothedHSpeed = instantHSpeed; state.hSpeedZeroTicks = 0
+        } else if (instantHSpeed < 0.05) {
+            if (++state.hSpeedZeroTicks >= 2) { state.smoothedHSpeed = 0.0; state.hSpeedZeroTicks = 0 }
+            else state.smoothedHSpeed = state.smoothedHSpeed * 0.85
+        } else {
+            state.hSpeedZeroTicks = 0
+            state.smoothedHSpeed = state.smoothedHSpeed * 0.85 + instantHSpeed * 0.15
+        }
         val playerMoved = force || hasMeaningfullyMoved(state, playerEyes)
         if (WaypointStats.enabled) WaypointStats.playerTicks++
 
@@ -743,7 +905,13 @@ private class TrackedLocatableWaypointDisplay(
         val bobActive = entry.bob.enabled && entry.bob.height > 0.0
         val shouldUpdate = force || playerMoved || bobActive
         // Same value for every slot this tick — compute the sine once per player.
-        val bobY = calculateBob()
+        // bobY is a pure render-layer offset: it is applied to the final Y at packet time
+        // (updateLabel/updateSymbolDisplay) and never enters the tracking pipeline. It used
+        // to ride inside the anchor/snap positions, which fed the sine through
+        // smoothLocation: the bob delta inflated the smoothing distance, so snap/arrive/glide
+        // damped its amplitude, lagged its phase and — worse — made the XZ convergence alpha
+        // oscillate with the bob phase (perceived as chase lag / micro-glitch).
+        val bobY = calculateBob(state.tickSerial)
 
         if (!shouldUpdate && entry.performance.lazyUpdate) {
             val anyTargetMoved = targets.any { target ->
@@ -762,7 +930,7 @@ private class TrackedLocatableWaypointDisplay(
         targets.forEachIndexed { index, target ->
             val key = target.key()
             val slot = state.slots.getOrPut(key) { WaypointSlot() }
-            updateSlot(player, state, slot, target, playerEyes, playerFeet, bobY, force || playerMoved || bobActive, fullUpdate, fullBeamUpdate, index, targets.size)
+            updateSlot(player, state, slot, target, playerEyes, playerFeet, bobY, dispX, dispY, dispZ, force || playerMoved || bobActive, fullUpdate, index, targets.size)
         }
     }
 
@@ -776,9 +944,11 @@ private class TrackedLocatableWaypointDisplay(
         playerEyes: Location,
         playerFeet: Location,
         bobY: Double,
+        dispX: Double,
+        dispY: Double,
+        dispZ: Double,
         shouldUpdate: Boolean,
         fullUpdate: Boolean = true,
-        fullBeamUpdate: Boolean = true,
         index: Int = 0,
         total: Int = 1,
     ) {
@@ -845,12 +1015,12 @@ private class TrackedLocatableWaypointDisplay(
                 val arrivedPos = Location(
                     player.world,
                     target.location.x,
-                    target.location.y + entry.symbol.snapHeight + bobY,
+                    target.location.y + entry.symbol.snapHeight,
                     target.location.z,
                 )
                 val smoothedArrivedPos = smoothLocation(slot.lastSymbolLocation, arrivedPos, MotionProfile.SYMBOL_SNAP)
                 slot.lastSymbolLocation = smoothedArrivedPos
-                updateSymbolDisplay(player, slot, smoothedArrivedPos, entry.symbol.maxScale, 1.0f, TEXT_INTERP)
+                updateSymbolDisplay(player, slot, smoothedArrivedPos, entry.symbol.maxScale, 1.0f, TEXT_INTERP, bobY)
             } else {
                 destroyFakeDisplay(player, slot.symbol)
                 slot.lastSymbolLocation = null
@@ -865,7 +1035,7 @@ private class TrackedLocatableWaypointDisplay(
         slot.lastTargetLocation = targetLocation
 
         val doUpdate = shouldUpdate || slotMoved
-        val labelInterp = TEXT_INTERP
+        var labelInterp = TEXT_INTERP
 
         val markerName = target.markerName(player)
         // Degenerate case: eyes exactly on the target. distance is the full 3D eye→target
@@ -917,25 +1087,21 @@ private class TrackedLocatableWaypointDisplay(
             latZ = 0.0
         }
 
-        // Velocity look-ahead with lateral damping:
+        // Motion look-ahead with lateral damping:
         //   parallel component (toward waypoint) = full look-ahead
-        //   perpendicular component (strafe)     = 35% of look-ahead
-        // Prevents the label from jerking when the player strafes past the waypoint.
-        // Decomposition in scalars — the vector version cost a clone plus chained mutations
-        // per slot per tick. player.velocity is the only remaining alloc (Bukkit returns a
-        // copy); its Y is captured here so the anchor block doesn't call it a second time.
-        val vel = player.velocity
-        val velX = vel.x
-        val velZ = vel.z
-        val velYAbs = abs(vel.y)
-        val speed = sqrt(velX * velX + velZ * velZ)
-        val speed01 = smoothstep(0.35, 1.50, speed).coerceIn(0.0, 1.0)
-        val lookAheadTicks = 1.0 + 2.0 * speed01
-        val parallelAmount = velX * dirX + velZ * dirZ
+        //   perpendicular (strafe) = 35% of look-ahead
+        val speed = state.smoothedHSpeed
+        val speed01 = smoothstep(0.18, 0.42, speed)
+        val lookAheadTicks = 1.0 + 2.0 * speed01 + REMOTE_EXTRA_TICKS
+        val parallelAmount = dispX * dirX + dispZ * dirZ
         val parX = dirX * parallelAmount
         val parZ = dirZ * parallelAmount
-        val velOffX = parX * lookAheadTicks + (velX - parX) * lookAheadTicks * 0.35
-        val velOffZ = parZ * lookAheadTicks + (velZ - parZ) * lookAheadTicks * 0.35
+        val parAdvance = (parallelAmount * lookAheadTicks).coerceIn(-0.80, 0.80)
+        val velOffX = dirX * parAdvance + (dispX - parX) * lookAheadTicks * 0.35
+        val velOffZ = dirZ * parAdvance + (dispZ - parZ) * lookAheadTicks * 0.35
+        val parAdvanceDrop = slot.lastParAdvance - parAdvance
+        if (WaypointStats.enabled && parAdvanceDrop > 0.08) WaypointStats.lookAheadDropCount++
+        slot.lastParAdvance = parAdvance
 
         val beamMaxHalf = maxOf(entry.beam.width, entry.beam.depth) * thinFactor / 2.0
         val beamFrontDepth = horizontalDist - beamMaxHalf - 0.08
@@ -943,9 +1109,6 @@ private class TrackedLocatableWaypointDisplay(
 
         val directionArrow = calculateDirectionArrow(playerFeet, target.location)
 
-        // Near-hide latch (label/symbol follow mode): hide at hideRange, show again at
-        // hideRange + 0.75. Beam fade latch: fade out at thinFactor ≤ 0.01, respawn only
-        // once it recovers past 0.05 (~half a block of hysteresis on the fade curve).
         if (slot.labelHideLatch) {
             if (horizontalDist > entry.label.hideRange + 0.75) slot.labelHideLatch = false
         } else if (horizontalDist <= entry.label.hideRange) {
@@ -1012,41 +1175,61 @@ private class TrackedLocatableWaypointDisplay(
                     playerEyes.z + dirZ * safeClamp + velOffZ,
                 )
                 val verticalHint = (verticalDelta * 0.08).coerceIn(-1.25, 1.25)
-                val rawBaseY = playerEyes.y + entry.label.height + verticalHint
+                // Y look-ahead: 40% weight of XZ, cap ±0.60 — covers structural Y lag
+                // without amplifying jump oscillation.
+                val vertLookAhead = (dispY * lookAheadTicks * 0.40).coerceIn(-0.60, 0.60)
+                val rawBaseY = playerEyes.y + entry.label.height + verticalHint + vertLookAhead
 
-                val verticalSpeed = velYAbs
-                val baseAlphaY = if (verticalSpeed > 0.45) 0.24 else 0.18
-                val maxStepY   = if (verticalSpeed > 0.45) 0.24 else 0.16
-                val smoothedBaseY = slot.lastVisualBaseY?.let { last ->
-                    last + ((rawBaseY - last) * baseAlphaY).coerceIn(-maxStepY, maxStepY)
-                } ?: rawBaseY
+                val vertT = smoothstep(0.35, 0.55, abs(dispY))
+                val baseAlphaY = lerp(0.30, 0.65, vertT)
+                val maxStepY   = lerp(0.25, 0.50, vertT)
+                val lastBaseY = slot.lastVisualBaseY
+                val dy = rawBaseY - (lastBaseY ?: rawBaseY)
+                val absDy = abs(dy)
+                val vertSnap    = lastBaseY != null && absDy >= LABEL_VERTICAL_SNAP_THRESHOLD
+                val vertCatchup = lastBaseY != null && absDy >= LABEL_VERTICAL_CATCHUP_THRESHOLD
+                val smoothedBaseY = when {
+                    lastBaseY == null || vertSnap -> rawBaseY
+                    vertCatchup -> {
+                        val alpha = lerp(LABEL_VERTICAL_FAST_ALPHA, 0.95, smoothstep(LABEL_VERTICAL_CATCHUP_THRESHOLD, LABEL_VERTICAL_SNAP_THRESHOLD, absDy))
+                        lastBaseY + dy * alpha
+                    }
+                    else -> lastBaseY + (dy * baseAlphaY).coerceIn(-maxStepY, maxStepY)
+                }
+                if (WaypointStats.enabled && (vertSnap || vertCatchup)) WaypointStats.labelVertCatchupCount++
+                if (vertSnap) labelInterp = 0
                 slot.lastVisualBaseY = smoothedBaseY
-                rawAnchor.y = smoothedBaseY + bobY
-
-                val rawDeltaXZ = slot.lastVisualAnchor?.let { prev ->
+                rawAnchor.y = smoothedBaseY
+                val smoothed = slot.lastVisualAnchor?.let { prev ->
                     val ddx = rawAnchor.x - prev.x
                     val ddz = rawAnchor.z - prev.z
-                    sqrt(ddx * ddx + ddz * ddz)
-                } ?: 0.0
-                var alphaXZ = when {
-                    rawDeltaXZ > 1.2  -> 0.95
-                    rawDeltaXZ > 0.6  -> 0.85
-                    rawDeltaXZ > 0.25 -> 0.70
-                    else              -> 0.55
-                }
-                if (rawDeltaXZ > 2.0) alphaXZ = 1.0
-                else if (rawDeltaXZ > 1.0) alphaXZ = maxOf(alphaXZ, 0.90)
-
-                // Both branches produce a fresh Vector that is never mutated afterwards
-                // (label/symbol positions are built component-wise from it) — store directly.
-                val smoothed = slot.lastVisualAnchor?.let { prev ->
+                    val dPar = ddx * dirX + ddz * dirZ
+                    val latDx = ddx - dPar * dirX
+                    val latDz = ddz - dPar * dirZ
+                    val dLat = sqrt(latDx * latDx + latDz * latDz)
+                    val alphaPar = lerp(0.85, 1.0, smoothstep(0.0, 0.20, abs(dPar)))
+                    val alphaLat = lerp(0.20, 1.0, smoothstep(0.01, 0.25, dLat))
                     Vector(
-                        lerp(prev.x, rawAnchor.x, alphaXZ),
+                        prev.x + dPar * alphaPar * dirX + latDx * alphaLat,
                         rawAnchor.y,
-                        lerp(prev.z, rawAnchor.z, alphaXZ),
+                        prev.z + dPar * alphaPar * dirZ + latDz * alphaLat,
                     )
                 } ?: rawAnchor
 
+                if (WaypointStats.enabled && slot.lastVisualAnchor != null) {
+                    val errDx = smoothed.x - rawAnchor.x
+                    val errDz = smoothed.z - rawAnchor.z
+                    val errPar = errDx * dirX + errDz * dirZ
+                    val errLatDx = errDx - errPar * dirX
+                    val errLatDz = errDz - errPar * dirZ
+                    val errLat = sqrt(errLatDx * errLatDx + errLatDz * errLatDz)
+                    val errTotal = sqrt(errDx * errDx + errDz * errDz)
+                    WaypointStats.anchorErrParSum += abs(errPar)
+                    WaypointStats.anchorErrLatSum += errLat
+                    if (errTotal > WaypointStats.anchorErrMax) WaypointStats.anchorErrMax = errTotal
+                    WaypointStats.anchorErrCount++
+                    if (errTotal > 0.05) WaypointStats.anchorErrOver05++
+                }
                 slot.lastVisualAnchor = smoothed
                 smoothed
             }
@@ -1066,13 +1249,13 @@ private class TrackedLocatableWaypointDisplay(
                 visualAnchor.y,
                 visualAnchor.z + latZ,
             )
-            val labelPos = smoothLocation(slot.lastLabelLocation, rawLabelPos, MotionProfile.LABEL)
+            val labelPos = smoothLocation(slot.lastLabelLocation, rawLabelPos, MotionProfile.LABEL, dirX, dirZ)
             slot.lastLabelLocation = labelPos
             updateLabel(player, slot, labelPos, markerName, distance, directionArrow, 1.0f, labelInterp, finalOpacity, index, total,
                 isEntityTarget = target.entityUUID != null || target.sourceId?.startsWith("npc:") == true,
                 entityTypeName = target.entityTypeName,
                 routePointIndex = target.routePointIndex, routePointCount = target.routePointCount,
-                routePointName = target.routePointName)
+                routePointName = target.routePointName, bobY = bobY)
         }
 
         // --- Symbol ---
@@ -1080,24 +1263,18 @@ private class TrackedLocatableWaypointDisplay(
             if (slot.symbolSnapped || verticalColumnMode) {
                 // Snapped/arrived: symbol sits directly on the target — no lateral offset.
                 if (doUpdate) {
-                    // Component-wise build — the old clone + toVector pair + normalize chain
-                    // allocated four temporaries per tick while snapped.
-                    var snapX = target.location.x
-                    var snapZ = target.location.z
-                    if (entry.symbol.snapPosition == SymbolSnapPosition.FRONT_OF_BEAM) {
-                        val toPlayerX = playerEyes.x - snapX
-                        val toPlayerZ = playerEyes.z - snapZ
-                        val len2 = toPlayerX * toPlayerX + toPlayerZ * toPlayerZ
-                        if (len2 > 0.001) {
-                            val push = (beamMaxHalf + 0.15) / sqrt(len2)
-                            snapX += toPlayerX * push
-                            snapZ += toPlayerZ * push
-                        }
-                    }
-                    val snapPos = Location(player.world, snapX, target.location.y + entry.symbol.snapHeight + bobY, snapZ)
+                    // Snapped symbol always centers on the waypoint — the old FRONT_OF_BEAM
+                    // mode (offset toward the player) was removed as a panel option; centered
+                    // is the correct behavior and the only one kept.
+                    val snapPos = Location(
+                        player.world,
+                        target.location.x,
+                        target.location.y + entry.symbol.snapHeight,
+                        target.location.z,
+                    )
                     val smoothedSnapPos = smoothLocation(slot.lastSymbolLocation, snapPos, MotionProfile.SYMBOL_SNAP)
                     slot.lastSymbolLocation = smoothedSnapPos
-                    updateSymbolDisplay(player, slot, smoothedSnapPos, entry.symbol.minScale, 1.0f, labelInterp)
+                    updateSymbolDisplay(player, slot, smoothedSnapPos, entry.symbol.minScale, 1.0f, labelInterp, bobY)
                 }
             } else if (!shouldBeVisible) {
                 hideFakeDisplay(player, slot.symbol, state.tickSerial)
@@ -1115,38 +1292,77 @@ private class TrackedLocatableWaypointDisplay(
                     visualAnchor.y + entry.symbol.offset,
                     visualAnchor.z + latZ,
                 )
-                val symbolPos = smoothLocation(slot.lastSymbolLocation, rawSymbolPos, MotionProfile.SYMBOL)
+                val symbolPos = smoothLocation(slot.lastSymbolLocation, rawSymbolPos, MotionProfile.SYMBOL, dirX, dirZ)
                 slot.lastSymbolLocation = symbolPos
-                updateSymbolDisplay(player, slot, symbolPos, symbolScale, thinFactor, labelInterp)
+                updateSymbolDisplay(player, slot, symbolPos, symbolScale, thinFactor, labelInterp, bobY)
             }
         } else {
             destroyFakeDisplay(player, slot.symbol)
             slot.lastSymbolLocation = null
         }
 
-        // --- Beam (independent tick rate — fullBeamUpdate defaults to every tick for smooth follow) ---
-        if (fullBeamUpdate) {
-            if (entry.general.mode == WaypointType.BEAM || entry.general.mode == WaypointType.BOTH) {
-                if (doUpdate) {
-                    if (slot.beamFadeLatch) {
-                        // Scale-0 hide, not destroy — the fade boundary is crossed constantly
-                        // near objectives; destroying churned spawn + full metadata (incl.
-                        // CraftEngine block-state remap) on every re-approach.
-                        hideBeamSlot(player, slot.beam, state.tickSerial)
-                        slot.lastBeamPointer = null
-                    } else {
-                        val pointerPos = calculateBeamPosition(playerFeet, targetLocation)
-                        val smoothedPointerPos = smoothLocation(slot.lastBeamPointer, pointerPos, MotionProfile.BEAM)
-                        slot.lastBeamPointer = smoothedPointerPos
-                        updateBeam(player, slot.beam, smoothedPointerPos, thinFactor, playerFeet.y)
-                    }
+        // --- Beam (every tick — the update cadence is internal policy, see INTERNAL_BEAM_TICK_RATE) ---
+        if (entry.general.mode == WaypointType.BEAM || entry.general.mode == WaypointType.BOTH) {
+            if (doUpdate) {
+                if (slot.beamFadeLatch) {
+                    // Scale-0 hide, not destroy — the fade boundary is crossed constantly
+                    // near objectives; destroying churned spawn + full metadata (incl.
+                    // CraftEngine block-state remap) on every re-approach.
+                    hideBeamSlot(player, slot.beam, state.tickSerial)
+                    slot.lastBeamPointer = null
+                } else {
+                    val pointerPos = calculateBeamPosition(playerFeet, targetLocation)
+                    val smoothedPointerPos = smoothLocation(slot.lastBeamPointer, pointerPos, MotionProfile.BEAM)
+                    slot.lastBeamPointer = smoothedPointerPos
+                    updateBeam(player, slot.beam, smoothedPointerPos, thinFactor, playerFeet.y, state.tickSerial)
                 }
-            } else {
-                destroyBeamSlot(player, slot.beam)
-                slot.lastBeamPointer = null
             }
+        } else {
+            destroyBeamSlot(player, slot.beam)
+            slot.lastBeamPointer = null
+        }
 
-            // --- Entity glow (tickRate ticks) ---
+        // --- Debug: text-icon separation + slot snapshot on condition ---
+        if (WaypointStats.enabled) {
+            val lblLoc = slot.lastLabelLocation
+            val symLoc = slot.lastSymbolLocation
+            if (entry.symbol.enabled && !slot.symbolSnapped && !verticalColumnMode && lblLoc != null && symLoc != null) {
+                val sepDx = lblLoc.x - symLoc.x
+                val sepDz = lblLoc.z - symLoc.z
+                val sep = sqrt(sepDx * sepDx + sepDz * sepDz)
+                if (sep > WaypointStats.textIconSepMax) WaypointStats.textIconSepMax = sep
+                WaypointStats.textIconSepSum += sep
+                WaypointStats.textIconSepCount++
+                if (sep > 0.001) {
+                    Bukkit.getLogger().info("[WaypointRPG][slot-dbg t=${state.tickSerial}] icon-sep=%.4f disp=(%.3f,%.3f,%.3f) hSpd=%.3f(sm=%.3f) la=%.3f par=%.3f anchor=(%.3f,%.3f) label=(%.3f,%.3f) sym=(%.3f,%.3f)".format(
+                        sep, dispX, dispY, dispZ, sqrt(dispX*dispX+dispZ*dispZ), state.smoothedHSpeed,
+                        lookAheadTicks, parAdvance,
+                        visualAnchor?.x ?: 0.0, visualAnchor?.z ?: 0.0,
+                        lblLoc.x, lblLoc.z, symLoc.x, symLoc.z))
+                }
+            }
+            // lazyUpdate skip while player moved
+            if (!shouldUpdateTransform && sqrt(dispX*dispX+dispZ*dispZ) > 0.01) WaypointStats.teleportSkipWhileMoving++
+            // Per-slot snapshot on high anchor error or large look-ahead drop
+            val anchorErrXZ = visualAnchor?.let { a ->
+                val rawX = playerEyes.x + dirX * safeClamp + velOffX
+                val rawZ = playerEyes.z + dirZ * safeClamp + velOffZ
+                sqrt((a.x - rawX).let { it * it } + (a.z - rawZ).let { it * it })
+            } ?: 0.0
+            if (anchorErrXZ > 0.05 || parAdvanceDrop > 0.08) {
+                val yawRad = Math.toRadians(playerEyes.yaw.toDouble())
+                val fwdX = -sin(yawRad); val fwdZ = cos(yawRad)
+                val branch = when { !shouldBeVisible -> "hidden"; slot.symbolSnapped -> "snap"; slot.arrivedLatch -> "arrive"; else -> "track" }
+                Bukkit.getLogger().info("[WaypointRPG][slot-dbg t=${state.tickSerial}] anchorErr=%.4f la-drop=%.4f disp=(%.3f,%.3f,%.3f) hSpd=%.3f(sm=%.3f) yaw=%.1f fwd=(%.2f,%.2f) la=%.3f par=%.3f branch=$branch anchor=(%.3f,%.3f)".format(
+                    anchorErrXZ, parAdvanceDrop, dispX, dispY, dispZ,
+                    sqrt(dispX*dispX+dispZ*dispZ), state.smoothedHSpeed,
+                    playerEyes.yaw, fwdX, fwdZ, lookAheadTicks, parAdvance,
+                    visualAnchor?.x ?: 0.0, visualAnchor?.z ?: 0.0))
+            }
+        }
+
+        // --- Entity glow (INTERNAL_SECONDARY_TICK_RATE cadence) ---
+        if (fullUpdate) {
             if (entry.integrations.entityGlow && target.entityUUID != null) {
                 val entity = findEntityByUuid(target.entityUUID)
                 val entityId = entity?.entityId ?: -1
@@ -1221,7 +1437,14 @@ private class TrackedLocatableWaypointDisplay(
 
         if (raw.isEmpty() && entityRaw.isEmpty()) return emptyList()
 
-        val all = raw + entityRaw
+        // Single-target fast path — the common case (one active objective, no entity
+        // targets) runs per player per tick; it doesn't need the comparator sort, the
+        // take() copy or the distinctBy set. Under 100 players that skips three
+        // collection allocations per player per tick.
+        if (entityRaw.isEmpty() && raw.size == 1) {
+            return listOf(applyRoute(player, state, raw[0]))
+        }
+        val all = if (entityRaw.isEmpty()) raw else raw + entityRaw
         val sorted = when (entry.general.selection) {
             WaypointTargetSelection.CLOSEST ->
                 all.sortedWith(
@@ -1374,15 +1597,15 @@ private class TrackedLocatableWaypointDisplay(
         val horizDist = sqrt(dx * dx + dz * dz)
         if (horizDist < 0.01) return Location(targetLocation.world, targetLocation.x, targetLocation.y, targetLocation.z)
         return when {
-            horizDist <= entry.beam.staticRange ->
+            horizDist <= entry.beam.follow.staticRange ->
                 Location(targetLocation.world, targetLocation.x, targetLocation.y, targetLocation.z)
-            horizDist >= entry.beam.followRange -> {
-                val ratio = entry.beam.followDist.coerceIn(1.0, horizDist - 0.5) / horizDist
+            horizDist >= entry.beam.follow.followRange -> {
+                val ratio = entry.beam.follow.followDist.coerceIn(1.0, horizDist - 0.5) / horizDist
                 Location(playerLocation.world, playerLocation.x + dx * ratio, targetLocation.y, playerLocation.z + dz * ratio)
             }
             else -> {
-                val t = smoothstep(entry.beam.staticRange, entry.beam.followRange, horizDist)
-                val ratio = entry.beam.followDist.coerceIn(1.0, horizDist - 0.5) / horizDist
+                val t = smoothstep(entry.beam.follow.staticRange, entry.beam.follow.followRange, horizDist)
+                val ratio = entry.beam.follow.followDist.coerceIn(1.0, horizDist - 0.5) / horizDist
                 Location(playerLocation.world,
                     lerp(targetLocation.x, playerLocation.x + dx * ratio, t),
                     targetLocation.y,
@@ -1404,16 +1627,16 @@ private class TrackedLocatableWaypointDisplay(
         }
     }
 
-    private fun updateBeam(player: Player, beam: ActiveBeam, pointerPos: Location, thinFactor: Float, playerY: Double) {
+    private fun updateBeam(player: Player, beam: ActiveBeam, pointerPos: Location, thinFactor: Float, playerY: Double, nowTick: Long) {
         if (beam.disabled) return
         if (!entry.beam.enabled) {
             destroyBeamSlot(player, beam)
             return
         }
 
-        // interp = beamTickRate: teleport_duration and interpolation_duration both match the actual
+        // interp = internal beam tick rate: teleport_duration and interpolation_duration both match the actual
         // update frequency so the client always has exactly one interpolation window per update.
-        val interp = entry.beam.beamTickRate.coerceAtLeast(1)
+        val interp = INTERNAL_BEAM_TICK_RATE
         val sx1 = entry.beam.width * thinFactor
         val sz1 = entry.beam.depth * thinFactor
         val sx2 = entry.beam.coreWidth * thinFactor
@@ -1424,12 +1647,26 @@ private class TrackedLocatableWaypointDisplay(
         val beamBaseY: Double
         val scaleY: Float
         if (entry.beam.dynamicHeight) {
-            // playerY param — the old code called player.location here again (fresh alloc)
-            // even though the caller already resolved the player position.
-            val baseY = minOf(pointerPos.y - 20.0, playerY - 20.0)
-            val topY = pointerPos.y + entry.beam.height
-            beamBaseY = baseY
-            scaleY = (topY - baseY).toFloat().coerceIn(entry.beam.height.toFloat(), 500f)
+            val needBase = minOf(pointerPos.y, playerY) - 20.0
+            val needTop  = maxOf(pointerPos.y, playerY) + entry.beam.height
+            var base = beam.dynBaseY
+            if (base.isNaN() || needBase < base) {
+                base = kotlin.math.floor(needBase / BEAM_BASE_STEP) * BEAM_BASE_STEP
+            } else if (needBase - base >= BEAM_BASE_RAISE_HYSTERESIS) {
+                base = kotlin.math.floor((needBase - BEAM_BASE_STEP) / BEAM_BASE_STEP) * BEAM_BASE_STEP
+            }
+            beam.dynBaseY = base
+            beamBaseY = base
+            var top = beam.dynTopY
+            val topForce = top.isNaN() || needTop > top || abs(needTop - top) >= BEAM_VERTICAL_CATCHUP_THRESHOLD
+            if (topForce) {
+                top = kotlin.math.ceil(needTop / BEAM_BASE_STEP) * BEAM_BASE_STEP
+                if (WaypointStats.enabled && !beam.dynTopY.isNaN()) WaypointStats.beamTopForceCount++
+            } else if (top - needTop >= BEAM_TOP_RAISE_HYSTERESIS) {
+                top = kotlin.math.ceil((needTop + BEAM_BASE_STEP) / BEAM_BASE_STEP) * BEAM_BASE_STEP
+            }
+            beam.dynTopY = top
+            scaleY = (top - base).toFloat().coerceIn(entry.beam.height.toFloat(), 500f)
         } else {
             beamBaseY = pointerPos.y - 20.0
             scaleY = entry.beam.height.toFloat().coerceIn(1f, 500f)
@@ -1476,7 +1713,20 @@ private class TrackedLocatableWaypointDisplay(
             // Full metadata — includes block state (index 23). Sent ONCE per entity lifetime.
             runCatching {
                 sendBeamSpawnMeta(player, beam.id1, sid1, sx1, sz1, scaleY)
-                sendBeamSpawnMeta(player, beam.id2, sid2, sx2, sz2, scaleY)
+                // Inner layer spawns already at the current spin angle — the first keyframe
+                // (next update) then continues from it instead of sweeping in from 0°.
+                sendBeamSpawnMeta(
+                    player, beam.id2, sid2, sx2, sz2, scaleY,
+                    if (entry.beam.rotateLikeBeacon) beamAngleAt(nowTick) else 0.0,
+                )
+                beam.nextRotTick = nowTick + 1
+                beam.lastRotHash = if (entry.beam.rotateLikeBeacon) {
+                    var hash = sx2.toRawBits()
+                    hash = 31 * hash + sz2.toRawBits()
+                    hash = 31 * hash + scaleY.toRawBits()
+                    hash = 31 * hash + interp
+                    hash
+                } else null
             }.onFailure {
                 Bukkit.getLogger().warning(
                     "[WaypointRPG] Beam spawn metadata failed. " +
@@ -1501,22 +1751,71 @@ private class TrackedLocatableWaypointDisplay(
                 teleportBeamEntities(player, beam, bx, beamBaseY, bz)
                 beam.lastX = bx; beam.lastY = beamBaseY; beam.lastZ = bz
                 beam.hidden = false
+                // Rotating inner layer: restore instantly (duration = interp) at the
+                // current spin angle; the next keyframe resumes the spin from there.
+                // The outer layer is restored by the hash path below (hash is null).
+                if (entry.beam.rotateLikeBeacon) {
+                    sendBeamRotateMeta(player, beam.id2, sx2, sz2, scaleY, interp, interp, beamAngleAt(nowTick))
+                    beam.nextRotTick = nowTick + 1
+                    var hash = sx2.toRawBits()
+                    hash = 31 * hash + sz2.toRawBits()
+                    hash = 31 * hash + scaleY.toRawBits()
+                    hash = 31 * hash + interp
+                    beam.lastRotHash = hash
+                }
                 if (WaypointStats.enabled) WaypointStats.reshows++
             }
             // Metadata first (sets teleport_duration = interp so the client knows to interpolate),
             // then teleport packet (client uses the duration it just received to smooth the move).
             // Manual hash — listOf().hashCode() allocated a list and boxed five floats per
             // beam per tick just to compare.
-            var transformHash = sx1.toRawBits()
-            transformHash = 31 * transformHash + sz1.toRawBits()
-            transformHash = 31 * transformHash + sx2.toRawBits()
-            transformHash = 31 * transformHash + sz2.toRawBits()
-            transformHash = 31 * transformHash + scaleY.toRawBits()
-            transformHash = 31 * transformHash + interp
-            if (beam.lastTransformHash != transformHash) {
-                sendBeamTransformMeta(player, beam.id1, sx1, sz1, scaleY, interp)
-                sendBeamTransformMeta(player, beam.id2, sx2, sz2, scaleY, interp)
-                beam.lastTransformHash = transformHash
+            if (entry.beam.rotateLikeBeacon) {
+                // Outer layer: static, hash-gated as always. Inner layer: rotation keyframes —
+                // its scale/height ride the keyframe (≤ PERIOD ticks of latency on a quantized
+                // 1/32 thinFactor step, invisible on the core inside the glass), so it is
+                // excluded from the hash.
+                var transformHash = sx1.toRawBits()
+                transformHash = 31 * transformHash + sz1.toRawBits()
+                transformHash = 31 * transformHash + scaleY.toRawBits()
+                transformHash = 31 * transformHash + interp
+                if (beam.lastTransformHash != transformHash) {
+                    sendBeamTransformMeta(player, beam.id1, sx1, sz1, scaleY, interp)
+                    beam.lastTransformHash = transformHash
+                }
+                if (nowTick >= beam.nextRotTick) {
+                    var rotHash = sx2.toRawBits()
+                    rotHash = 31 * rotHash + sz2.toRawBits()
+                    rotHash = 31 * rotHash + scaleY.toRawBits()
+                    rotHash = 31 * rotHash + interp
+                    if (beam.lastRotHash != rotHash) {
+                        sendBeamRotateMeta(
+                            player, beam.id2, sx2, sz2, scaleY,
+                            BEAM_ROTATE_PERIOD_TICKS.toInt(), interp,
+                            beamAngleAt(nowTick + BEAM_ROTATE_PERIOD_TICKS),
+                        )
+                        beam.lastRotHash = rotHash
+                    } else {
+                        sendBeamRotatePoseMeta(
+                            player, beam.id2,
+                            sx2, sz2,
+                            BEAM_ROTATE_PERIOD_TICKS.toInt(), interp,
+                            beamAngleAt(nowTick + BEAM_ROTATE_PERIOD_TICKS),
+                        )
+                    }
+                    beam.nextRotTick = nowTick + BEAM_ROTATE_PERIOD_TICKS
+                }
+            } else {
+                var transformHash = sx1.toRawBits()
+                transformHash = 31 * transformHash + sz1.toRawBits()
+                transformHash = 31 * transformHash + sx2.toRawBits()
+                transformHash = 31 * transformHash + sz2.toRawBits()
+                transformHash = 31 * transformHash + scaleY.toRawBits()
+                transformHash = 31 * transformHash + interp
+                if (beam.lastTransformHash != transformHash) {
+                    sendBeamTransformMeta(player, beam.id1, sx1, sz1, scaleY, interp)
+                    sendBeamTransformMeta(player, beam.id2, sx2, sz2, scaleY, interp)
+                    beam.lastTransformHash = transformHash
+                }
             }
             val positionChanged = abs(beam.lastX - bx) > 0.0001
                 || abs(beam.lastY - beamBaseY) > 0.0001
@@ -1578,19 +1877,34 @@ private class TrackedLocatableWaypointDisplay(
     private fun sendBeamSpawnMeta(
         player: Player, id: Int,
         blockStateId: Int, sx: Float, sz: Float, sy: Float,
+        angleDeg: Double = 0.0,
     ) {
+        // angleDeg ≠ 0 only for the rotating inner layer (rotateLikeBeacon): the centering
+        // translation must be rotated by the same angle so the spin happens around the
+        // column axis, not around the block's corner origin. At 0° this is exactly the
+        // static (-sx/2, 0, -sz/2) offset. Culling width gets a √2 margin while rotating
+        // so the corners of the spun square never clip out of the culling AABB.
+        val angleRad = Math.toRadians(angleDeg)
+        val cosA = cos(angleRad)
+        val sinA = sin(angleRad)
+        val hx = sx / 2.0
+        val hz = sz / 2.0
+        val tx = (-(hx * cosA + hz * sinA)).toFloat()
+        val tz = (-(-hx * sinA + hz * cosA)).toFloat()
+        val half = angleRad / 2.0
+        val cullWidth = maxOf(sx, sz) * (if (angleDeg != 0.0) 1.5f else 1f)
         val meta = listOf(
             EntityData(8,  EntityDataTypes.INT,         0),
             EntityData(9,  EntityDataTypes.INT,         0),
             EntityData(10, EntityDataTypes.INT,         0),
-            EntityData(11, EntityDataTypes.VECTOR3F,    PEVec3f(-sx / 2f, 0f, -sz / 2f)),
+            EntityData(11, EntityDataTypes.VECTOR3F,    PEVec3f(tx, 0f, tz)),
             EntityData(12, EntityDataTypes.VECTOR3F,    PEVec3f(sx, sy, sz)),
-            EntityData(13, EntityDataTypes.QUATERNION,  PEQuat(0f, 0f, 0f, 1f)),
+            EntityData(13, EntityDataTypes.QUATERNION,  PEQuat(0f, sin(half).toFloat(), 0f, cos(half).toFloat())),
             EntityData(14, EntityDataTypes.QUATERNION,  PEQuat(0f, 0f, 0f, 1f)),
             EntityData(15, EntityDataTypes.BYTE,        0.toByte()),
             EntityData(16, EntityDataTypes.INT,         if (entry.beam.fullBright) (15 shl 20) or (15 shl 4) else -1),
             EntityData(17, EntityDataTypes.FLOAT,       8.0f),
-            EntityData(20, EntityDataTypes.FLOAT,       maxOf(sx, sz)),
+            EntityData(20, EntityDataTypes.FLOAT,       cullWidth),
             EntityData(21, EntityDataTypes.FLOAT,       sy),
             EntityData(23, EntityDataTypes.BLOCK_STATE, blockStateId),
         )
@@ -1634,6 +1948,82 @@ private class TrackedLocatableWaypointDisplay(
         }.onFailure { Bukkit.getLogger().warning("[WaypointRPG] sendBeamTransformMeta(id=$id) failed: ${it.message}") }
     }
 
+    // Spin angle for rotateLikeBeacon, driven by the per-player tickSerial (all of a
+    // player's beams rotate in phase; server lag slows the spin like vanilla gameTime).
+    // Modulo 720°, not 360°: quaternion components have a 720° period, so consecutive
+    // keyframes always keep a positive quaternion dot product and the client slerp can
+    // never take the long way around at a wrap.
+    private fun beamAngleAt(tick: Long): Double = (tick * BEAM_ROTATE_DEG_PER_TICK) % 720.0
+
+    // Rotation keyframe for the inner beam layer (rotateLikeBeacon).
+    // Index 9 (interpolation_duration) spans to the next keyframe so the client slerps
+    // the spin smoothly between keyframes — one metadata packet per PERIOD ticks.
+    // Index 10 (teleport_duration) keeps the internal beam tick rate value: teleports stay exactly
+    // as firm as without rotation, the spin adds zero positional lag.
+    // Translation = centering offset rotated by the same angle → rotation around the
+    // column axis, not the block corner. The linear lerp of the translation between
+    // keyframes deviates from the slerp arc by at most (1−cos(11.25°)) ≈ 2% of the
+    // half-width (~2 mm on the default core) — invisible.
+    private fun sendBeamRotateMeta(
+        player: Player, id: Int,
+        sx: Float, sz: Float, sy: Float,
+        duration: Int, teleportInterp: Int, angleDeg: Double,
+    ) {
+        val angleRad = Math.toRadians(angleDeg)
+        val cosA = cos(angleRad)
+        val sinA = sin(angleRad)
+        val hx = sx / 2.0
+        val hz = sz / 2.0
+        val tx = (-(hx * cosA + hz * sinA)).toFloat()
+        val tz = (-(-hx * sinA + hz * cosA)).toFloat()
+        val half = angleRad / 2.0
+        val meta = listOf(
+            EntityData(8,  EntityDataTypes.INT,        0),
+            EntityData(9,  EntityDataTypes.INT,        duration),
+            EntityData(10, EntityDataTypes.INT,        teleportInterp),
+            EntityData(11, EntityDataTypes.VECTOR3F,   PEVec3f(tx, 0f, tz)),
+            EntityData(12, EntityDataTypes.VECTOR3F,   PEVec3f(sx, sy, sz)),
+            EntityData(13, EntityDataTypes.QUATERNION, PEQuat(0f, sin(half).toFloat(), 0f, cos(half).toFloat())),
+            EntityData(20, EntityDataTypes.FLOAT,      maxOf(sx, sz) * 1.5f),
+            EntityData(21, EntityDataTypes.FLOAT,      sy),
+        )
+        runCatching {
+            val user = PacketEvents.getAPI().playerManager.getUser(player) ?: return
+            user.sendPacket(WrapperPlayServerEntityMetadata(id, meta))
+            if (WaypointStats.enabled) WaypointStats.beamMeta++
+        }.onFailure { Bukkit.getLogger().warning("[WaypointRPG] sendBeamRotateMeta(id=$id) failed: ${it.message}") }
+    }
+
+    // Rotation-only keyframe for the inner rotating core. Used when scale/culling/interp
+    // inputs are unchanged: the client already has those sticky fields, so only the
+    // new centering translation + quaternion need updating.
+    private fun sendBeamRotatePoseMeta(
+        player: Player, id: Int,
+        sx: Float, sz: Float,
+        duration: Int, teleportInterp: Int, angleDeg: Double,
+    ) {
+        val angleRad = Math.toRadians(angleDeg)
+        val cosA = cos(angleRad)
+        val sinA = sin(angleRad)
+        val hx = sx / 2.0
+        val hz = sz / 2.0
+        val tx = (-(hx * cosA + hz * sinA)).toFloat()
+        val tz = (-(-hx * sinA + hz * cosA)).toFloat()
+        val half = angleRad / 2.0
+        val meta = listOf(
+            EntityData(8,  EntityDataTypes.INT,        0),
+            EntityData(9,  EntityDataTypes.INT,        duration),
+            EntityData(10, EntityDataTypes.INT,        teleportInterp),
+            EntityData(11, EntityDataTypes.VECTOR3F,   PEVec3f(tx, 0f, tz)),
+            EntityData(13, EntityDataTypes.QUATERNION, PEQuat(0f, sin(half).toFloat(), 0f, cos(half).toFloat())),
+        )
+        runCatching {
+            val user = PacketEvents.getAPI().playerManager.getUser(player) ?: return
+            user.sendPacket(WrapperPlayServerEntityMetadata(id, meta))
+            if (WaypointStats.enabled) WaypointStats.beamMeta++
+        }.onFailure { Bukkit.getLogger().warning("[WaypointRPG] sendBeamRotatePoseMeta(id=$id) failed: ${it.message}") }
+    }
+
     // --- Beam cleanup ---
 
     // Scale-0 hide for the beam — same pattern as hideFakeDisplay. Keeps both block
@@ -1651,6 +2041,7 @@ private class TrackedLocatableWaypointDisplay(
         beam.hidden = true
         beam.hiddenAtTick = nowTick
         beam.lastTransformHash = null
+        beam.lastRotHash = null
         if (WaypointStats.enabled) WaypointStats.hides++
     }
 
@@ -1730,28 +2121,33 @@ private class TrackedLocatableWaypointDisplay(
                 WaypointStats.hides++
                 if (display.isSymbol) WaypointStats.symbolMeta++ else WaypointStats.labelMeta++
             }
-            display.lastMetadataHash = null
+            display.lastTextId = null
+            display.lastStyleHash = null
             display.hidden = true
             display.hiddenAtTick = nowTick
         }.onFailure { Bukkit.getLogger().warning("[WaypointRPG] hideFakeDisplay failed: ${it.message}") }
     }
 
-    private fun teleportFakeDisplay(player: Player, display: FakeTextDisplay, pos: Location) {
+    // yOffset carries the bob: a pure render-layer displacement added to the final Y here,
+    // after all tracking/smoothing has run on bob-free positions. Dedupe and the stored
+    // spawn coordinates use the offset Y so a phase change alone still emits the packet.
+    private fun teleportFakeDisplay(player: Player, display: FakeTextDisplay, pos: Location, yOffset: Double = 0.0) {
         if (!display.isSpawned) return
+        val finalY = pos.y + yOffset
         // Position dedupe — skip the packet when the entity is already there
         // (stationary player with bob disabled would otherwise teleport every tick).
         if (abs(pos.x - display.spawnX) < 1e-4 &&
-            abs(pos.y - display.spawnY) < 1e-4 &&
+            abs(finalY - display.spawnY) < 1e-4 &&
             abs(pos.z - display.spawnZ) < 1e-4) return
         runCatching {
             val user = PacketEvents.getAPI().playerManager.getUser(player) ?: return
             user.sendPacket(
                 WrapperPlayServerEntityTeleport(
-                    display.id, PEVec3d(pos.x, pos.y, pos.z), 0f, 0f, false
+                    display.id, PEVec3d(pos.x, finalY, pos.z), 0f, 0f, false
                 )
             )
             display.spawnX = pos.x
-            display.spawnY = pos.y
+            display.spawnY = finalY
             display.spawnZ = pos.z
             if (WaypointStats.enabled) {
                 if (display.isSymbol) WaypointStats.symbolTeleports++ else WaypointStats.labelTeleports++
@@ -1783,49 +2179,70 @@ private class TrackedLocatableWaypointDisplay(
         // instant while invisible) and the normal duration then scales the text back in
         // place. That removes the follow-up resend the duration-0 hash used to force.
         val duration = if (display.firstFrame) 0 else interp
-        // identityHashCode instead of Component.hashCode(): components are cached and reused
-        // (parseDisplayText / input-hash gate), so identity is stable while content is
-        // unchanged — and it avoids a full component-tree hash per call. A rebuilt-but-equal
-        // component only costs one redundant (harmless) metadata send.
-        // Manual rolling hash — the old listOf().hashCode() allocated a list and boxed
-        // every primitive per display per tick just to decide "nothing changed".
-        var metadataHash = System.identityHashCode(text)
-        metadataHash = 31 * metadataHash + finalScale.toRawBits()
-        metadataHash = 31 * metadataHash + (if (seeThrough) 1 else 0)
-        metadataHash = 31 * metadataHash + (if (shadow) 1 else 0)
-        metadataHash = 31 * metadataHash + opacity.toInt()
-        metadataHash = 31 * metadataHash + bgColor
-        metadataHash = 31 * metadataHash + lineWidth
-        metadataHash = 31 * metadataHash + billboard.toInt()
-        metadataHash = 31 * metadataHash + alignBits
-        metadataHash = 31 * metadataHash + duration
-        if (display.lastMetadataHash == metadataHash) return
+        // Split change detection: text vs runtime style. Entity metadata is sticky
+        // client-side — only dirty indices need re-sending — so the two most frequent
+        // update paths shrink from the full 15-entry set:
+        //   text-only  (distance label ticked over one meter)  → 1 entry
+        //   style-only (symbol scale step / FOV opacity step)  → 5 entries
+        // styleHash covers only the fields that can change while a display lives —
+        // scale, opacity, duration. Everything else (billboard, background, flags,
+        // lineWidth, align) derives from immutable entry config and is established by
+        // the full metadata on spawn/re-show.
+        // identityHashCode instead of Component.hashCode(): components are cached and
+        // reused (parseDisplayText / input-hash gate), so identity is stable while
+        // content is unchanged. A rebuilt-but-equal component only costs one redundant
+        // (harmless) resend.
+        val textId = System.identityHashCode(text)
+        var styleHash = finalScale.toRawBits()
+        styleHash = 31 * styleHash + opacity.toInt()
+        styleHash = 31 * styleHash + duration
+        val textChanged = display.lastTextId != textId
+        val styleChanged = display.lastStyleHash != styleHash
+        if (!textChanged && !styleChanged) return
 
-        val meta = listOf(
-            EntityData(8,  EntityDataTypes.INT,           0),
-            EntityData(9,  EntityDataTypes.INT,           duration),
-            EntityData(10, EntityDataTypes.INT,           duration),
-            EntityData(11, EntityDataTypes.VECTOR3F,      PEVec3f(0f, 0f, 0f)),
-            EntityData(12, EntityDataTypes.VECTOR3F,      PEVec3f(finalScale, finalScale, finalScale)),
-            EntityData(13, EntityDataTypes.QUATERNION,    PEQuat(0f, 0f, 0f, 1f)),
-            EntityData(14, EntityDataTypes.QUATERNION,    PEQuat(0f, 0f, 0f, 1f)),
-            EntityData(15, EntityDataTypes.BYTE,          billboard),
-            EntityData(16, EntityDataTypes.INT,           (15 shl 20) or (15 shl 4)),
-            EntityData(17, EntityDataTypes.FLOAT,         64.0f),
-            EntityData(23, EntityDataTypes.ADV_COMPONENT, text),
-            EntityData(24, EntityDataTypes.INT,           lineWidth),
-            EntityData(25, EntityDataTypes.INT,           bgColor),
-            EntityData(26, EntityDataTypes.BYTE,          opacity),
-            EntityData(27, EntityDataTypes.BYTE,          flagsByte),
-        )
+        val meta: List<EntityData<*>> = if (display.firstFrame || display.hidden) {
+            // Full field set: first frame after spawn, or re-show after a hide (the hide
+            // meta zeroed scale and durations, and config fields must be re-established
+            // for a fresh spawn).
+            listOf(
+                EntityData(8,  EntityDataTypes.INT,           0),
+                EntityData(9,  EntityDataTypes.INT,           duration),
+                EntityData(10, EntityDataTypes.INT,           duration),
+                EntityData(11, EntityDataTypes.VECTOR3F,      PEVec3f(0f, 0f, 0f)),
+                EntityData(12, EntityDataTypes.VECTOR3F,      PEVec3f(finalScale, finalScale, finalScale)),
+                EntityData(13, EntityDataTypes.QUATERNION,    PEQuat(0f, 0f, 0f, 1f)),
+                EntityData(14, EntityDataTypes.QUATERNION,    PEQuat(0f, 0f, 0f, 1f)),
+                EntityData(15, EntityDataTypes.BYTE,          billboard),
+                EntityData(16, EntityDataTypes.INT,           (15 shl 20) or (15 shl 4)),
+                EntityData(17, EntityDataTypes.FLOAT,         64.0f),
+                EntityData(23, EntityDataTypes.ADV_COMPONENT, text),
+                EntityData(24, EntityDataTypes.INT,           lineWidth),
+                EntityData(25, EntityDataTypes.INT,           bgColor),
+                EntityData(26, EntityDataTypes.BYTE,          opacity),
+                EntityData(27, EntityDataTypes.BYTE,          flagsByte),
+            )
+        } else buildList {
+            if (styleChanged) {
+                // 8/9/10 accompany the scale so the client opens a fresh interpolation
+                // window for the transform — same recipe the hide meta already uses.
+                add(EntityData(8,  EntityDataTypes.INT,      0))
+                add(EntityData(9,  EntityDataTypes.INT,      duration))
+                add(EntityData(10, EntityDataTypes.INT,      duration))
+                add(EntityData(12, EntityDataTypes.VECTOR3F, PEVec3f(finalScale, finalScale, finalScale)))
+                add(EntityData(26, EntityDataTypes.BYTE,     opacity))
+            }
+            if (textChanged) add(EntityData(23, EntityDataTypes.ADV_COMPONENT, text))
+        }
         runCatching {
             val user = PacketEvents.getAPI().playerManager.getUser(player) ?: return
             user.sendPacket(WrapperPlayServerEntityMetadata(display.id, meta))
             if (WaypointStats.enabled) {
                 if (display.hidden) WaypointStats.reshows++
                 if (display.isSymbol) WaypointStats.symbolMeta++ else WaypointStats.labelMeta++
+                if (meta.size < 15) WaypointStats.partialMeta++
             }
-            display.lastMetadataHash = metadataHash
+            display.lastTextId = textId
+            display.lastStyleHash = styleHash
             display.firstFrame = false
             display.hidden = false
         }.onFailure { Bukkit.getLogger().warning("[WaypointRPG] sendFakeTextMeta(id=${display.id}) failed: ${it::class.simpleName}: ${it.message}") }
@@ -1848,9 +2265,10 @@ private class TrackedLocatableWaypointDisplay(
         routePointIndex: Int? = null,
         routePointCount: Int = 0,
         routePointName: String? = null,
+        bobY: Double = 0.0,
     ) {
         val isFirstFrame = !slot.label.isSpawned || slot.label.firstFrame
-        if (!slot.label.isSpawned) spawnFakeText(player, slot.label, location.x, location.y, location.z)
+        if (!slot.label.isSpawned) spawnFakeText(player, slot.label, location.x, location.y + bobY, location.z)
         val wasHidden = slot.label.hidden
 
         // Cheap composite hash of every placeholder input. The 12-step replace chain
@@ -1897,7 +2315,7 @@ private class TrackedLocatableWaypointDisplay(
         // Re-show: teleport first — the hide meta left teleport_duration = 0, so the move
         // is instant while still invisible; the meta below restores scale in place with
         // the normal duration. One meta + one teleport, no follow-up resend.
-        if (wasHidden) teleportFakeDisplay(player, slot.label, location)
+        if (wasHidden) teleportFakeDisplay(player, slot.label, location, bobY)
         sendFakeTextMeta(
             player, slot.label, text,
             entry.label.scale, thinFactor,
@@ -1906,21 +2324,22 @@ private class TrackedLocatableWaypointDisplay(
             labelBgColor, entry.label.lineWidth.coerceAtLeast(1),
             labelBillboard, labelAlignBits, interp,
         )
-        if (!isFirstFrame && !wasHidden) teleportFakeDisplay(player, slot.label, location)
+        if (!isFirstFrame && !wasHidden) teleportFakeDisplay(player, slot.label, location, bobY)
     }
 
     private fun updateSymbolDisplay(
         player: Player, slot: WaypointSlot, location: Location,
         scale: Float, thinFactor: Float = 1.0f, interp: Int = TEXT_INTERP,
+        bobY: Double = 0.0,
     ) {
         val isFirstFrame = !slot.symbol.isSpawned || slot.symbol.firstFrame
-        if (!slot.symbol.isSpawned) spawnFakeText(player, slot.symbol, location.x, location.y, location.z)
+        if (!slot.symbol.isSpawned) spawnFakeText(player, slot.symbol, location.x, location.y + bobY, location.z)
         val wasHidden = slot.symbol.hidden
 
         val text = parseDisplayText(slot.symbol, entry.symbol.text.get(player))
 
         // Re-show recipe: see updateLabel — teleport while invisible, then one normal meta.
-        if (wasHidden) teleportFakeDisplay(player, slot.symbol, location)
+        if (wasHidden) teleportFakeDisplay(player, slot.symbol, location, bobY)
         sendFakeTextMeta(
             player, slot.symbol, text,
             scale, thinFactor,
@@ -1929,7 +2348,7 @@ private class TrackedLocatableWaypointDisplay(
             bgColor = 0, lineWidth = 1000,
             billboard = 3.toByte(), alignBits = 0, interp,
         )
-        if (!isFirstFrame && !wasHidden) teleportFakeDisplay(player, slot.symbol, location)
+        if (!isFirstFrame && !wasHidden) teleportFakeDisplay(player, slot.symbol, location, bobY)
     }
 
     // --- Entity glow (client-side only) ---
@@ -1955,7 +2374,7 @@ private class TrackedLocatableWaypointDisplay(
 
     private fun sharedEntityFlags(entity: Entity): Byte {
         var flags = 0
-        if (entity.fireTicks > 0 || entity.isVisualFire) flags = flags or 0x01
+        if (entity.fireTicks > 0) flags = flags or 0x01
         if (entity is LivingEntity) {
             if (entity.isSneaking) flags = flags or 0x02
             if (entity.isSwimming) flags = flags or 0x10
@@ -1997,14 +2416,23 @@ private class TrackedLocatableWaypointDisplay(
     //   LABEL       — damped at millimetric deltas to kill lateral shimmer, full track > ~2m.
     //   SYMBOL      — firmer than label so the icon doesn't wobble while following.
     //   SYMBOL_SNAP — pinned to the waypoint, converges hard.
-    // Y passes through unsmoothed in normal tracking (bob must stay crisp; vertical motion
-    // is already damped upstream via smoothedBaseY). During a handoff glide Y interpolates
-    // too, so the sweep to the new target is a straight diagonal, not an L-shape.
+    // Y passes through unsmoothed in normal tracking (vertical motion is already damped
+    // upstream via smoothedBaseY; the bob never reaches this function — it is added to the
+    // final Y at packet time). During a handoff glide Y interpolates too, so the sweep to
+    // the new target is a straight diagonal, not an L-shape.
     // Deltas above HANDOFF_GLIDE_START only occur when the target itself changed (route
     // advance, selector swap, route → final objective): those glide exponentially with a
     // guaranteed minimum catch-up speed instead of hard-snapping across the screen.
     // Callers always pass a fresh Location as `target`, so returning it directly is safe.
-    private fun smoothLocation(previous: Location?, target: Location, profile: MotionProfile): Location {
+    // dirX/dirZ ≠ 0 marks an anchor-derived caller (label/symbol normal follow). Those
+    // positions come from visualAnchor, which is now the SINGLE smoothing stage: a
+    // second per-entity pass here gave text and icon different damping (LABEL floor
+    // 0.36 vs SYMBOL 0.46 — the icon converged ~27% faster on lateral corrections,
+    // visibly splitting the pair) and stacked another parallel stage onto the first
+    // ticks of frontal advance (net ≈ 0.58 response at startup). Pass through instead:
+    // both take anchor + fixed offset — exact lockstep. Only the glide branch below
+    // still applies (handoff, snap→unsnap convergence from a stale per-entity position).
+    private fun smoothLocation(previous: Location?, target: Location, profile: MotionProfile, dirX: Double = 0.0, dirZ: Double = 0.0): Location {
         if (previous == null || previous.world != target.world) return target
 
         val dx = target.x - previous.x
@@ -2014,6 +2442,7 @@ private class TrackedLocatableWaypointDisplay(
         if (distance < 1e-5) return target
 
         val gliding = distance > HANDOFF_GLIDE_START
+        if (!gliding && (dirX != 0.0 || dirZ != 0.0)) return target
         val alpha: Double = if (gliding) {
             // MAX_ALPHA cap: without it, deltas just above GLIDE_START got alpha ≈ 1.0
             // (min step ≥ distance) — short handoffs between nearby route points were a
@@ -2043,9 +2472,14 @@ private class TrackedLocatableWaypointDisplay(
         )
     }
 
-    private fun calculateBob(): Double {
+    // Tick-driven phase, not wall clock. The client interpolates every teleport over
+    // exactly one tick window, but wall-clock sampling advanced the sine by however long
+    // the last tick actually took — under MSPT jitter the per-packet bob delta varied,
+    // reading as irregular vertical speed. tickSerial advances the phase by a constant
+    // 50 ms per packet, so the piecewise-linear sine the client renders has uniform slope.
+    private fun calculateBob(tickSerial: Long): Double {
         if (!entry.bob.enabled || entry.bob.height <= 0.0) return 0.0
-        val t = System.currentTimeMillis() / 1000.0
+        val t = tickSerial * 0.05
         return sin(t * entry.bob.speed * 2.0 * PI) * entry.bob.height
     }
 
@@ -2054,23 +2488,23 @@ private class TrackedLocatableWaypointDisplay(
     private fun calculateDirectionArrow(loc: Location, rawTargetLocation: Location): String {
         if (entry.target.verticalThreshold > 0.0) {
             val dy = rawTargetLocation.y - loc.y
-            if (dy > entry.target.verticalThreshold) return "▲"
-            if (dy < -entry.target.verticalThreshold) return "▼"
+            if (dy > entry.target.verticalThreshold) return DirectionGlyphs.get("up")
+            if (dy < -entry.target.verticalThreshold) return DirectionGlyphs.get("down")
         }
         val ddx = rawTargetLocation.x - loc.x
         val ddz = rawTargetLocation.z - loc.z
-        if (ddx * ddx + ddz * ddz < 0.01) return "↑"
+        if (ddx * ddx + ddz * ddz < 0.01) return DirectionGlyphs.get("north")
         val targetYaw = Math.toDegrees(atan2(-ddx, ddz)).toFloat()
         val rel = ((targetYaw - loc.yaw + 360f) % 360f)
         return when {
-            rel < 22.5f || rel >= 337.5f -> "↑"
-            rel < 67.5f  -> "↗"
-            rel < 112.5f -> "→"
-            rel < 157.5f -> "↘"
-            rel < 202.5f -> "↓"
-            rel < 247.5f -> "↙"
-            rel < 292.5f -> "←"
-            else         -> "↖"
+            rel < 22.5f || rel >= 337.5f -> DirectionGlyphs.get("north")
+            rel < 67.5f  -> DirectionGlyphs.get("northeast")
+            rel < 112.5f -> DirectionGlyphs.get("east")
+            rel < 157.5f -> DirectionGlyphs.get("southeast")
+            rel < 202.5f -> DirectionGlyphs.get("south")
+            rel < 247.5f -> DirectionGlyphs.get("southwest")
+            rel < 292.5f -> DirectionGlyphs.get("west")
+            else         -> DirectionGlyphs.get("northwest")
         }
     }
 
