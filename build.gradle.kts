@@ -38,7 +38,7 @@ typewriter {
     namespace = "waypointrpg"
 
     extension {
-        name = "WaypointRPG"
+        name = "HeadPop"
         shortDescription = "Quest waypoint markers with beacon beam and hologram for tracked objectives"
         description = """
             Created by Dominik (cg.headpop).
