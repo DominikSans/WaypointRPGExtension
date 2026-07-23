@@ -153,6 +153,9 @@ data class WaypointLabelConfig(
     @Help("When true, ghost ignores the FOV cone and stays visible regardless of look direction.")
     val ghostIgnoreFov: Boolean = false,
 
+    @Help("Use Minecraft's built-in text background on the ghost layer. Improves readability through walls and terrain. (WaypointS-style isDefaultBackground)")
+    val ghostDefaultBackground: Boolean = false,
+
     @Help("Line wrap width in pixels.")
     val lineWidth: Int = 255,
 
@@ -203,6 +206,9 @@ data class WaypointSymbolConfig(
 
     @Help("Maximum distance (blocks) at which the ghost icon activates.")
     val ghostMaxDistance: Double = 128.0,
+
+    @Help("Use Minecraft's built-in text background on the ghost icon layer. Improves contrast through walls.")
+    val ghostDefaultBackground: Boolean = false,
 )
 
 data class WaypointBeamFollowConfig(
@@ -1342,6 +1348,7 @@ private class TrackedLocatableWaypointDisplay(
                     ghostOpacityVal.toByte(),
                     0, entry.label.lineWidth.coerceAtLeast(1),
                     labelBillboard, labelAlignBits, labelInterp,
+                    defaultBackground = entry.label.ghostDefaultBackground,
                 )
                 if (!isFirstGhostFrame && !wasGhostHidden) teleportFakeDisplay(player, slot.labelGhost, ghostLabelPos, bobY)
             } else {
@@ -1430,6 +1437,7 @@ private class TrackedLocatableWaypointDisplay(
                     entry.symbol.ghostOpacity.coerceIn(0, 255).toByte(),
                     0, 1000,
                     3.toByte(), 0, labelInterp,
+                    defaultBackground = entry.symbol.ghostDefaultBackground,
                 )
                 if (!isFirstGhostSymFrame && !wasGhostSymHidden) teleportFakeDisplay(player, slot.symbolGhost, ghostSymbolPos, bobY)
             } else {
@@ -2307,9 +2315,11 @@ private class TrackedLocatableWaypointDisplay(
         billboard: Byte,
         alignBits: Int,
         interp: Int,
+        defaultBackground: Boolean = false,
     ) {
         if (!display.isSpawned) return
-        val flagsByte = ((if (shadow) 0x01 else 0) or (if (seeThrough) 0x02 else 0) or alignBits).toByte()
+        val flagsByte = ((if (shadow) 0x01 else 0) or (if (seeThrough) 0x02 else 0)
+            or (if (defaultBackground) 0x04 else 0) or alignBits).toByte()
         val finalScale = scale * thinFactor
         // First frame: duration 0 so the entity appears at full scale instantly at its
         // spawn position. Re-shows no longer need duration 0 here — the caller teleports
