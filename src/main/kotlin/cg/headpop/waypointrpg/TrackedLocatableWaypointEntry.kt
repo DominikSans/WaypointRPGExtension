@@ -137,7 +137,7 @@ data class WaypointLabelConfig(
     @Help("Drop shadow on text.")
     val shadow: Boolean = true,
 
-    @Help("No effect in this version.")
+    @Help("Render text through blocks (see-through walls).")
     val seeThrough: Boolean = false,
 
     @Help("Line wrap width in pixels.")
@@ -2319,7 +2319,7 @@ private class TrackedLocatableWaypointDisplay(
         sendFakeTextMeta(
             player, slot.label, text,
             entry.label.scale, thinFactor,
-            false, entry.label.shadow,
+            entry.label.seeThrough, entry.label.shadow,
             opacity.coerceIn(0, 255).toByte(),
             labelBgColor, entry.label.lineWidth.coerceAtLeast(1),
             labelBillboard, labelAlignBits, interp,

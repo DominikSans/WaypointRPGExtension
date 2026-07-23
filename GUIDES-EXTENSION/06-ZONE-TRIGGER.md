@@ -1,8 +1,8 @@
 # waypoint_zone_trigger — V2 Reference
 
-> **Versión:** `v0.3.0-dev`  
+> **Versión:** `v0.7.0-dev`  
 > **Descripción:** Referencia completa del entry `waypoint_zone_trigger` V2.  
-> **Modificado:** jueves, 3 de julio de 2026 (America/Lima).
+> **Modificado:** domingo, 5 de julio de 2026, 18:30 `(-05:00)` (America/Lima).
 
 ## Qué hace
 
@@ -17,8 +17,7 @@ Se usa siempre como hijo de una audiencia de quest o criteria — igual que `tra
 | Campo | Tipo | Default | Descripción |
 |---|---|---|---|
 | `radius` | `Double` | `5.0` | Radio de detección en bloques. |
-| `checkIntervalTicks` | `Int` | `5` | Cada cuántos ticks se verifica (min 1, max 100). |
-| `targetMode` | Enum | `ANY_ACTIVE_TARGET` | `OBJECTIVES_ONLY`: solo objectives de quest. `ANY_ACTIVE_TARGET`: objectives + entityTargets. |
+| `targetMode` | Enum | `ANY_ACTIVE_TARGET` | `OBJECTIVES_ONLY`: solo objectives de quest. `ANY_ACTIVE_TARGET`: objectives + entityTargets. `ACTIVE_ROUTE_POINT`: trigger en el punto de ruta actual. |
 | `maxTargets` | `Int` | `5` | Máximo de targets considerados. `0` = desactivado. Debe coincidir con `general.maxTargets` del waypoint visual. |
 | `selection` | Enum | `CLOSEST` | Orden para elegir los top-N targets: `CLOSEST` o `HIGHEST_PRIORITY`. |
 | `triggerPerTarget` | `Bool` | `false` | `false` = un evento para ANY. `true` = evento por cada target key. |
@@ -84,7 +83,6 @@ Combina objectives + entity targets de la lista `entityTargets`. Sujetos al mism
   "type": "waypoint_zone_trigger",
   "id": "zt_reach_cave",
   "radius": 6.0,
-  "checkIntervalTicks": 5,
   "targetMode": "OBJECTIVES_ONLY",
   "maxTargets": 1,
   "onEnter": "trigger_arrived",
@@ -99,7 +97,6 @@ Combina objectives + entity targets de la lista `entityTargets`. Sujetos al mism
   "type": "waypoint_zone_trigger",
   "id": "zt_meet_oliver",
   "radius": 3.0,
-  "checkIntervalTicks": 4,
   "targetMode": "ANY_ACTIVE_TARGET",
   "maxTargets": 1,
   "triggerOnce": true,
@@ -124,7 +121,6 @@ Combina objectives + entity targets de la lista `entityTargets`. Sujetos al mism
   "type": "waypoint_zone_trigger",
   "id": "zt_checkpoints",
   "radius": 5.0,
-  "checkIntervalTicks": 4,
   "targetMode": "OBJECTIVES_ONLY",
   "maxTargets": 5,
   "selection": "CLOSEST",
@@ -145,7 +141,6 @@ Combina objectives + entity targets de la lista `entityTargets`. Sujetos al mism
   "type": "waypoint_zone_trigger",
   "id": "zt_escort_zone",
   "radius": 8.0,
-  "checkIntervalTicks": 10,
   "targetMode": "ANY_ACTIVE_TARGET",
   "maxTargets": 2,
   "selection": "HIGHEST_PRIORITY",

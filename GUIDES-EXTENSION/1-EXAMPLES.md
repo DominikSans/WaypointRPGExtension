@@ -2,7 +2,7 @@
 
 > **Versión:** `v0.7.0-dev`  
 > **Descripción:** referencia breve de campos y ejemplos de uso del esquema V2, incluye entity targets (Paso 3), zone trigger V2 (Paso 4) y BetterHUD bridge V2 (Paso 5).  
-> **Modificado:** sábado, 4 de julio de 2026, 21:04 `(-05:00)` (America/Lima).
+> **Modificado:** domingo, 5 de julio de 2026, 18:15 `(-05:00)` (America/Lima).
 
 Use `tracked_locatable_waypoint` como hijo de una audiencia. Como entry raíz se aplica a todos los jugadores.
 
@@ -15,7 +15,6 @@ Use `tracked_locatable_waypoint` como hijo de una audiencia. Como entry raíz se
 | `mode` | `HOLOGRAM`, `BEAM` o `BOTH`. |
 | `selection` | Orden `HIGHEST_PRIORITY` o `CLOSEST`. |
 | `maxTargets` | Máximo de objectives visibles; `0` oculta todos. |
-| `tickRate` | Intervalo general, en ticks. |
 | `arriveRadius` | Distancia 3D para considerar alcanzado el target. |
 | `hideOnArrive` | Oculta beam y label al llegar; conserva el symbol. |
 
@@ -55,7 +54,8 @@ Use `tracked_locatable_waypoint` como hijo de una audiencia. Como entry raíz se
 | `offset` | Offset Y en modo flotante. |
 | `snapRange`, `snapLeave` | Entrada y salida del snap con histéresis. |
 | `snapHeight` | Altura en snap/arrived. |
-| `snapPosition` | `CENTER_ON_WAYPOINT` o `FRONT_OF_BEAM`. |
+
+> El symbol en snap siempre se centra sobre el waypoint (interno; el antiguo `snapPosition` fue retirado del panel). La cadencia de updates también es interna: beam, label y symbol actualizan cada tick.
 
 ### `beam`
 
@@ -66,9 +66,8 @@ Use `tracked_locatable_waypoint` como hijo de una audiencia. Como entry raíz se
 | `width`, `depth` | Dimensiones exteriores. |
 | `coreWidth`, `coreDepth` | Dimensiones interiores. |
 | `height`, `dynamicHeight` | Altura y extensión hacia el Y del jugador. |
-| `staticRange`, `followRange`, `followDist` | Transición entre target fijo y seguimiento. |
+| `follow.staticRange`, `follow.followRange`, `follow.followDist` | Transición entre target fijo y seguimiento (`beam.follow`). |
 | `fadeStart`, `fadeEnd` | Reducción al acercarse. |
-| `beamTickRate` | Frecuencia independiente de movimiento. |
 
 ### Otras secciones
 
@@ -78,6 +77,27 @@ Use `tracked_locatable_waypoint` como hijo de una audiencia. Como entry raíz se
 | `routes` | `objectiveId`, `routeId`, `allowSkip`, `resetOnObjectiveChange`, `resetOnComplete`, `points` con `name`, `position`, `radius`. Placeholders: `{route_index}`, `{route_total}`, `{route_name}`, `{route_remaining}`. |
 | `integrations` | `entityTargets` (ver abajo), `entityGlow`, `glowRange`. |
 | `performance` | `lazyUpdate`, `cleanupOnJoin`, `cleanupRadius`. |
+
+### Glyphs de `{direction}` — snippets.yml
+
+Los 10 símbolos de dirección NO son fields del panel: son snippets nativos de Typewriter. La primera vez que un waypoint se muestra, el engine escribe los defaults en `plugins/Typewriter/snippets.yml`; edítalos ahí (unicode simple o glyphs de resource pack) y aplica con `/tw reload`:
+
+```yaml
+waypoint:
+  direction:
+    up: "▲"
+    down: "▼"
+    north: "↑"
+    northeast: "↗"
+    east: "→"
+    southeast: "↘"
+    south: "↓"
+    southwest: "↙"
+    west: "←"
+    northwest: "↖"
+```
+
+Coste: lectura desde cache en memoria del engine (un lookup por resolución, sin disco, sin allocations por tick). El archivo antiguo `direction-glyphs.yml` ya no se lee.
 
 ## Ejemplo — ubicación
 
@@ -150,7 +170,6 @@ Muestra hasta 3 objectives activos simultáneamente, separados lateralmente, con
     "mode": "BOTH",
     "selection": "CLOSEST",
     "maxTargets": 3,
-    "tickRate": 5,
     "arriveRadius": 2.0,
     "hideOnArrive": false
   },
@@ -185,8 +204,7 @@ Muestra hasta 3 objectives activos simultáneamente, separados lateralmente, con
     "offset": 0.5,
     "snapRange": 8.0,
     "snapLeave": 12.0,
-    "snapHeight": 2.5,
-    "snapPosition": "CENTER_ON_WAYPOINT"
+    "snapHeight": 2.5
   },
   "beam": {
     "enabled": true,
@@ -199,12 +217,13 @@ Muestra hasta 3 objectives activos simultáneamente, separados lateralmente, con
     "coreDepth": 0.25,
     "height": 150.0,
     "dynamicHeight": true,
-    "staticRange": 30.0,
-    "followRange": 60.0,
-    "followDist": 55.0,
+    "follow": {
+      "staticRange": 30.0,
+      "followRange": 60.0,
+      "followDist": 55.0
+    },
     "fadeStart": 10.0,
-    "fadeEnd": 3.0,
-    "beamTickRate": 1
+    "fadeEnd": 3.0
   },
   "bob": { "enabled": true, "height": 0.06, "speed": 1.2 },
   "integrations": {
@@ -278,7 +297,6 @@ Verifica: `/tag @e[tag=escort_mob] list`
     "mode": "BOTH",
     "selection": "CLOSEST",
     "maxTargets": 1,
-    "tickRate": 3,
     "arriveRadius": 2.0,
     "hideOnArrive": false
   },
@@ -312,8 +330,7 @@ Verifica: `/tag @e[tag=escort_mob] list`
     "offset": 0.5,
     "snapRange": 4.0,
     "snapLeave": 6.0,
-    "snapHeight": 3.0,
-    "snapPosition": "CENTER_ON_WAYPOINT"
+    "snapHeight": 3.0
   },
   "beam": {
     "enabled": true,
@@ -326,12 +343,13 @@ Verifica: `/tag @e[tag=escort_mob] list`
     "coreDepth": 0.25,
     "height": 120.0,
     "dynamicHeight": true,
-    "staticRange": 20.0,
-    "followRange": 50.0,
-    "followDist": 45.0,
+    "follow": {
+      "staticRange": 20.0,
+      "followRange": 50.0,
+      "followDist": 45.0
+    },
     "fadeStart": 8.0,
-    "fadeEnd": 2.0,
-    "beamTickRate": 1
+    "fadeEnd": 2.0
   },
   "bob": { "enabled": true, "height": 0.05, "speed": 1.0 },
   "integrations": {
@@ -366,7 +384,6 @@ Verifica: `/tag @e[tag=escort_mob] list`
     "mode": "BOTH",
     "selection": "CLOSEST",
     "maxTargets": 1,
-    "tickRate": 2,
     "arriveRadius": 3.0,
     "hideOnArrive": false
   },
@@ -399,12 +416,13 @@ Verifica: `/tag @e[tag=escort_mob] list`
     "coreDepth": 0.3,
     "height": 150.0,
     "dynamicHeight": true,
-    "staticRange": 30.0,
-    "followRange": 60.0,
-    "followDist": 55.0,
+    "follow": {
+      "staticRange": 30.0,
+      "followRange": 60.0,
+      "followDist": 55.0
+    },
     "fadeStart": 10.0,
-    "fadeEnd": 3.0,
-    "beamTickRate": 1
+    "fadeEnd": 3.0
   },
   "bob": { "enabled": false },
   "integrations": {
@@ -438,8 +456,7 @@ Combina un objective de ubicación con un escort NPC en el mismo waypoint entry.
   "general": {
     "mode": "BOTH",
     "selection": "HIGHEST_PRIORITY",
-    "maxTargets": 2,
-    "tickRate": 4
+    "maxTargets": 2
   },
   "label": {
     "text": "<gold>{name}</gold> <gray>[{target_type}]</gray><newline>{distance}",
@@ -516,7 +533,6 @@ El `npcEntryId` sería `"oliver_npc"`.
     "mode": "BOTH",
     "selection": "CLOSEST",
     "maxTargets": 1,
-    "tickRate": 3,
     "arriveRadius": 2.0,
     "hideOnArrive": true
   },
@@ -550,8 +566,7 @@ El `npcEntryId` sería `"oliver_npc"`.
     "offset": 0.5,
     "snapRange": 3.0,
     "snapLeave": 5.0,
-    "snapHeight": 3.5,
-    "snapPosition": "CENTER_ON_WAYPOINT"
+    "snapHeight": 3.5
   },
   "beam": {
     "enabled": true,
@@ -564,12 +579,13 @@ El `npcEntryId` sería `"oliver_npc"`.
     "coreDepth": 0.2,
     "height": 120.0,
     "dynamicHeight": true,
-    "staticRange": 25.0,
-    "followRange": 50.0,
-    "followDist": 45.0,
+    "follow": {
+      "staticRange": 25.0,
+      "followRange": 50.0,
+      "followDist": 45.0
+    },
     "fadeStart": 8.0,
-    "fadeEnd": 2.0,
-    "beamTickRate": 1
+    "fadeEnd": 2.0
   },
   "bob": { "enabled": true, "height": 0.06, "speed": 1.2 },
   "integrations": {
@@ -611,7 +627,6 @@ Dispara triggers al entrar/salir del radio de targets activos del sistema V2: lo
 | Field | Tipo | Default | Descripción |
 |---|---|---|---|
 | `radius` | Double | `5.0` | Radio en bloques. |
-| `checkIntervalTicks` | Int | `5` | Intervalo de verificación en ticks (1–100). |
 | `targetMode` | Enum | `ANY_ACTIVE_TARGET` | `OBJECTIVES_ONLY` solo objectives; `ANY_ACTIVE_TARGET` objectives + entityTargets; `ACTIVE_ROUTE_POINT` trigger en el route point activo (requiere `routes`). |
 | `maxTargets` | Int | `5` | Máximo de targets considerados (0 = desactivado). Debe coincidir con `general.maxTargets` del waypoint entry. |
 | `selection` | Enum | `CLOSEST` | Orden antes de aplicar maxTargets: `CLOSEST` o `HIGHEST_PRIORITY`. |
@@ -640,7 +655,6 @@ Dispara triggers al entrar/salir del radio de targets activos del sistema V2: lo
   "type": "waypoint_zone_trigger",
   "id": "zt_cave_enter",
   "radius": 6.0,
-  "checkIntervalTicks": 5,
   "targetMode": "OBJECTIVES_ONLY",
   "maxTargets": 1,
   "onEnter": "my_trigger_id",
@@ -657,7 +671,6 @@ Dispara `quest_npc_arrived` la primera vez que el jugador llega al radio del NPC
   "type": "waypoint_zone_trigger",
   "id": "zt_oliver",
   "radius": 3.0,
-  "checkIntervalTicks": 5,
   "targetMode": "ANY_ACTIVE_TARGET",
   "maxTargets": 1,
   "selection": "CLOSEST",
@@ -685,7 +698,6 @@ Dispara `quest_npc_arrived` la primera vez que el jugador llega al radio del NPC
   "type": "waypoint_zone_trigger",
   "id": "zt_checkpoints",
   "radius": 5.0,
-  "checkIntervalTicks": 4,
   "targetMode": "OBJECTIVES_ONLY",
   "maxTargets": 5,
   "selection": "CLOSEST",
@@ -706,7 +718,6 @@ Dispara trigger al llegar al route point activo. El índice es el mismo que muev
   "type": "waypoint_zone_trigger",
   "id": "zt_herrero_route",
   "radius": 3.0,
-  "checkIntervalTicks": 5,
   "targetMode": "ACTIVE_ROUTE_POINT",
   "maxTargets": 1,
   "triggerOnce": true,
@@ -776,7 +787,6 @@ Sincroniza targets activos V2 con puntos de brújula de BetterHUD. Soporta objec
 |---|---|---|---|
 | `iconName` | String | `"default"` | Nombre del elemento de brújula en el layout BetterHUD. |
 | `pointNamePrefix` | String | `"waypoint_"` | Prefijo de los IDs de punto. `entry.id` se agrega automáticamente. |
-| `updateIntervalTicks` | Int | `10` | Frecuencia de sync en ticks. 5–10 para entidades en movimiento. |
 | `targetMode` | Enum | `ANY_ACTIVE_TARGET` | `OBJECTIVES_ONLY`, `ENTITIES_ONLY` o `ANY_ACTIVE_TARGET`. |
 | `maxTargets` | Int | `5` | Máximo de puntos enviados simultáneamente a BetterHUD. |
 | `selection` | Enum | `CLOSEST` | `CLOSEST` o `HIGHEST_PRIORITY`. |
@@ -790,7 +800,6 @@ Sincroniza targets activos V2 con puntos de brújula de BetterHUD. Soporta objec
   "type": "waypoint_betterhud_bridge",
   "id": "bhud_main",
   "iconName": "quest",
-  "updateIntervalTicks": 10,
   "targetMode": "OBJECTIVES_ONLY",
   "maxTargets": 1
 }
@@ -803,7 +812,6 @@ Sincroniza targets activos V2 con puntos de brújula de BetterHUD. Soporta objec
   "type": "waypoint_betterhud_bridge",
   "id": "bhud_quests",
   "iconName": "quest",
-  "updateIntervalTicks": 10,
   "targetMode": "OBJECTIVES_ONLY",
   "maxTargets": 3,
   "selection": "HIGHEST_PRIORITY"
@@ -812,14 +820,13 @@ Sincroniza targets activos V2 con puntos de brújula de BetterHUD. Soporta objec
 
 ### Ejemplo — entity target SCOREBOARD_TAG (mob en movimiento)
 
-`updateIntervalTicks: 5` para que la posición del mob se actualice frecuentemente en el HUD.
+La cadencia de sync es interna (5 ticks / 0.25 s), suficiente para entidades en movimiento.
 
 ```json
 {
   "type": "waypoint_betterhud_bridge",
   "id": "bhud_escort",
   "iconName": "escort",
-  "updateIntervalTicks": 5,
   "targetMode": "ENTITIES_ONLY",
   "maxTargets": 1,
   "entityTargets": [
@@ -843,7 +850,6 @@ Oculta el punto de brújula cuando el jugador llega a menos de 3 bloques del NPC
   "type": "waypoint_betterhud_bridge",
   "id": "bhud_oliver",
   "iconName": "npc",
-  "updateIntervalTicks": 5,
   "targetMode": "ENTITIES_ONLY",
   "maxTargets": 1,
   "arriveRadius": 3.0,
@@ -893,7 +899,6 @@ El jar compilado en `build/libs/WaypointRPGExtension-1.0.0.jar` contiene el sche
     "mode": "BOTH",
     "selection": "CLOSEST",
     "maxTargets": 5,
-    "tickRate": 5,
     "arriveRadius": 1.5,
     "hideOnArrive": true
   },
@@ -929,8 +934,7 @@ El jar compilado en `build/libs/WaypointRPGExtension-1.0.0.jar` contiene el sche
     "offset": 0.5,
     "snapRange": 8.0,
     "snapLeave": 12.0,
-    "snapHeight": 3.0,
-    "snapPosition": "CENTER_ON_WAYPOINT"
+    "snapHeight": 3.0
   },
   "beam": {
     "enabled": true,
@@ -943,12 +947,13 @@ El jar compilado en `build/libs/WaypointRPGExtension-1.0.0.jar` contiene el sche
     "coreDepth": 0.25,
     "height": 150.0,
     "dynamicHeight": true,
-    "staticRange": 30.0,
-    "followRange": 60.0,
-    "followDist": 55.0,
+    "follow": {
+      "staticRange": 30.0,
+      "followRange": 60.0,
+      "followDist": 55.0
+    },
     "fadeStart": 10.0,
-    "fadeEnd": 3.0,
-    "beamTickRate": 1
+    "fadeEnd": 3.0
   },
   "bob": {
     "enabled": true,

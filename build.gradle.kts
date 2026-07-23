@@ -6,6 +6,8 @@ plugins {
 group = "cg.headpop"
 version = "1.0.0"
 
+val twEngineVersion = "0.9.0-beta-174"
+
 repositories {
     mavenCentral()
     maven("https://maven.typewritermc.com/releases")
@@ -48,8 +50,8 @@ typewriter {
             Display Entities (TextDisplay / BlockDisplay) and are visible only to the individual player.
             Includes zone triggers, BetterHUD compass integration, and guided route waypoints.
         """.trimIndent()
-        engineVersion = "0.9.0-beta-173"
-        channel = com.typewritermc.moduleplugin.ReleaseChannel.RELEASE
+        engineVersion = twEngineVersion
+        channel = com.typewritermc.moduleplugin.ReleaseChannel.BETA
 
         dependencies {
             dependency("typewritermc", "Quest")
@@ -70,5 +72,6 @@ java {
 }
 
 tasks.jar {
-    archiveBaseName.set("WaypointRPGExtension")
+    archiveBaseName.set("WaypointRPGExtension-${twEngineVersion}")
+    archiveVersion.set("")
 }

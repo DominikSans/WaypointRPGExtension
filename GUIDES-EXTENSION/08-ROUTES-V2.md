@@ -146,7 +146,6 @@ BetterHUD apunta al route point activo en lugar del objective final.
   "type": "waypoint_betterhud_bridge",
   "id": "bhud_herrero",
   "iconName": "quest",
-  "updateIntervalTicks": 10,
   "targetMode": "OBJECTIVES_ONLY",
   "maxTargets": 1,
   "routes": [

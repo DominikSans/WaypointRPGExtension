@@ -2,7 +2,7 @@
 
 > **Versión:** `v0.7.0-dev`  
 > **Descripción:** Referencia completa del entry `waypoint_betterhud_bridge` V2.  
-> **Modificado:** sábado, 4 de julio de 2026, 21:04 `(-05:00)` (America/Lima).
+> **Modificado:** domingo, 5 de julio de 2026, 18:30 `(-05:00)` (America/Lima).
 
 ## Qué hace
 
@@ -25,7 +25,6 @@ Si BetterHUD no está instalado, el bridge se desactiva silenciosamente con **un
 |---|---|---|---|
 | `iconName` | `String` | `"default"` | Nombre del elemento de brújula en el layout BetterHUD. |
 | `pointNamePrefix` | `String` | `"waypoint_"` | Prefijo de los IDs de punto. `entry.id` se agrega automáticamente. |
-| `updateIntervalTicks` | `Int` | `10` | Frecuencia de sync en ticks (1–200). 5–10 para entidades móviles. |
 | `targetMode` | Enum | `ANY_ACTIVE_TARGET` | Qué targets incluir (ver sección abajo). |
 | `maxTargets` | `Int` | `5` | Máximo de puntos enviados simultáneamente (0 = desactivado). |
 | `selection` | Enum | `CLOSEST` | Orden antes de `maxTargets`: `CLOSEST` o `HIGHEST_PRIORITY`. |
@@ -60,8 +59,7 @@ Formato: `${pointNamePrefix}${entry.id}_${target.zoneKey()}`
 
 El bridge detecta si la posición del target cambió desde el último sync:
 - Si `knownPositions[id] != newPos` → remove + re-add del punto con nueva coordenada.
-- Para NPCs Typewriter en Patrol/Path, la posición live se actualiza en cada `updateIntervalTicks`.
-- Usar `updateIntervalTicks: 5` para entidades que se mueven rápido.
+- La cadencia de sync es interna (5 ticks / 0.25 s): suficientemente frecuente para entidades en movimiento sin overhead por tick.
 
 ---
 
@@ -106,7 +104,6 @@ Dos entries de `waypoint_betterhud_bridge` con distintos `id` y distintos `iconN
   "type": "waypoint_betterhud_bridge",
   "id": "bhud_main",
   "iconName": "quest",
-  "updateIntervalTicks": 10,
   "targetMode": "OBJECTIVES_ONLY",
   "maxTargets": 1
 }
@@ -119,7 +116,6 @@ Dos entries de `waypoint_betterhud_bridge` con distintos `id` y distintos `iconN
   "type": "waypoint_betterhud_bridge",
   "id": "bhud_quests",
   "iconName": "quest",
-  "updateIntervalTicks": 10,
   "targetMode": "OBJECTIVES_ONLY",
   "maxTargets": 3,
   "selection": "HIGHEST_PRIORITY"
@@ -133,7 +129,6 @@ Dos entries de `waypoint_betterhud_bridge` con distintos `id` y distintos `iconN
   "type": "waypoint_betterhud_bridge",
   "id": "bhud_escort",
   "iconName": "escort",
-  "updateIntervalTicks": 5,
   "targetMode": "ENTITIES_ONLY",
   "maxTargets": 1,
   "entityTargets": [
@@ -155,7 +150,6 @@ Dos entries de `waypoint_betterhud_bridge` con distintos `id` y distintos `iconN
   "type": "waypoint_betterhud_bridge",
   "id": "bhud_oliver",
   "iconName": "npc",
-  "updateIntervalTicks": 5,
   "targetMode": "ENTITIES_ONLY",
   "maxTargets": 1,
   "arriveRadius": 3.0,
@@ -177,7 +171,6 @@ Dos entries de `waypoint_betterhud_bridge` con distintos `id` y distintos `iconN
   "type": "waypoint_betterhud_bridge",
   "id": "bhud_full",
   "iconName": "quest",
-  "updateIntervalTicks": 8,
   "targetMode": "ANY_ACTIVE_TARGET",
   "maxTargets": 3,
   "selection": "CLOSEST",
@@ -202,7 +195,7 @@ Dos entries de `waypoint_betterhud_bridge` con distintos `id` y distintos `iconN
 | B | 1 location objective activo | Aparece 1 punto en brújula; se actualiza distancia al mover jugador |
 | C | Jugador desactiva objective | Punto eliminado en siguiente tick |
 | D | `maxTargets=3`, 5 objectives activos | Solo 3 puntos en HUD; cambiar orden no duplica ni elimina mal |
-| E | SCOREBOARD_TAG mob en movimiento | Punto sigue al mob; `updateIntervalTicks=5` da seguimiento fluido |
+| E | SCOREBOARD_TAG mob en movimiento | Punto sigue al mob; seguimiento fluido con cadencia interna de 5 ticks |
 | F | Mob con tag muere | Punto eliminado en siguiente tick |
 | G | TYPEWRITER_NPC en Patrol | Punto sigue posición live del NPC; fallback spawnLocation si no spawneado |
 | H | Jugador pierde audience | Todos los puntos del bridge eliminados |
