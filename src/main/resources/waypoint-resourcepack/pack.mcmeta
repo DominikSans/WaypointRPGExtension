@@ -1,0 +1,7 @@
+{
+  "pack": {
+    "description": "WaypointRPGExtension core shaders for Minecraft 1.21.11",
+    "min_format": [75, 0],
+    "max_format": [84, 0]
+  }
+}

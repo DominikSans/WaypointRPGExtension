@@ -8,7 +8,7 @@
 
 Dispara triggers de Typewriter cuando un jugador **entra o sale** del radio de cualquier target activo del sistema V2: location objectives, entity targets Bukkit (UUID/NAME/SCOREBOARD_TAG) y Typewriter NPC (TYPEWRITER_NPC).
 
-Se usa siempre como hijo de una audiencia de quest o criteria — igual que `tracked_locatable_waypoint`.
+Se usa siempre como hijo de una audiencia de quest o criteria — igual que `static_waypoint`.
 
 ---
 

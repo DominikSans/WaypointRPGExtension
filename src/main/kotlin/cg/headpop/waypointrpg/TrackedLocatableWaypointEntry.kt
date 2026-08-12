@@ -11,11 +11,9 @@ import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerDe
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerEntityMetadata
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerEntityTeleport
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerSpawnEntity
-import com.typewritermc.core.books.pages.Colors
 import com.typewritermc.core.entries.Query
 import com.typewritermc.core.entries.priority
 import com.typewritermc.core.extension.annotations.Colored
-import com.typewritermc.core.extension.annotations.Entry
 import com.typewritermc.core.extension.annotations.Help
 import com.typewritermc.core.extension.annotations.Placeholder
 import com.typewritermc.core.extension.annotations.WithRotation
@@ -44,7 +42,6 @@ import net.kyori.adventure.text.minimessage.MiniMessage
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer
 import org.bukkit.Bukkit
 import org.bukkit.Color
-import org.bukkit.FluidCollisionMode
 import org.bukkit.Location
 import org.bukkit.Material
 import org.bukkit.entity.BlockDisplay
@@ -138,23 +135,8 @@ data class WaypointLabelConfig(
     @Help("Drop shadow on text.")
     val shadow: Boolean = true,
 
-    @Help("Wall-visibility mode. OFF = disabled. GHOST_WHEN_OCCLUDED = show ghost layer only when a block is between player and target. ALWAYS_GHOST_UNSAFE = always show ghost (may clip beam/entities).")
-    val wallVisibility: WallVisibilityMode = WallVisibilityMode.OFF,
-
-    @Help("Ghost layer opacity (0–255). Applied when wall-visibility is active.")
-    val ghostOpacity: Int = 160,
-
-    @Help("Ghost layer scale multiplier relative to the main label scale.")
-    val ghostScaleMultiplier: Float = 1.0f,
-
-    @Help("Maximum distance (blocks) at which the ghost layer activates.")
-    val ghostMaxDistance: Double = 128.0,
-
-    @Help("When true, ghost ignores the FOV cone and stays visible regardless of look direction.")
-    val ghostIgnoreFov: Boolean = false,
-
-    @Help("Use Minecraft's built-in text background on the ghost layer. Improves readability through walls and terrain. (WaypointS-style isDefaultBackground)")
-    val ghostDefaultBackground: Boolean = false,
+    @Help("Render text through blocks (see-through walls).")
+    val seeThrough: Boolean = false,
 
     @Help("Line wrap width in pixels.")
     val lineWidth: Int = 255,
@@ -194,21 +176,6 @@ data class WaypointSymbolConfig(
 
     @Help("Y above the waypoint when snapped or arrived.")
     val snapHeight: Double = 3.0,
-
-    @Help("Wall-visibility mode. OFF = disabled. GHOST_WHEN_OCCLUDED = show ghost icon only when a block is between player and target. ALWAYS_GHOST_UNSAFE = always show ghost (may clip beam).")
-    val wallVisibility: WallVisibilityMode = WallVisibilityMode.OFF,
-
-    @Help("Ghost icon opacity (0–255).")
-    val ghostOpacity: Int = 200,
-
-    @Help("Ghost icon scale multiplier relative to the main icon scale.")
-    val ghostScaleMultiplier: Float = 1.0f,
-
-    @Help("Maximum distance (blocks) at which the ghost icon activates.")
-    val ghostMaxDistance: Double = 128.0,
-
-    @Help("Use Minecraft's built-in text background on the ghost icon layer. Improves contrast through walls.")
-    val ghostDefaultBackground: Boolean = false,
 )
 
 data class WaypointBeamFollowConfig(
@@ -308,7 +275,6 @@ enum class WaypointType { HOLOGRAM, BEAM, BOTH }
 enum class WaypointTargetSelection { HIGHEST_PRIORITY, CLOSEST }
 enum class BillboardMode { CENTER, VERTICAL, HORIZONTAL, FIXED }
 enum class TextAlignMode { CENTER, LEFT, RIGHT }
-enum class WallVisibilityMode { OFF, GHOST_WHEN_OCCLUDED, ALWAYS_GHOST_UNSAFE }
 enum class EntityTargetType {
     UUID,            // Bukkit.getEntity(uuid) — global, fastest
     NAME,            // entity name or custom display name, nearest within maxDistance
@@ -363,15 +329,14 @@ data class WaypointRoutePoint(
 )
 
 // =============================================================================
-// Entry — V2
+// Archived entry — V2 source reference (intentionally not registered)
 // =============================================================================
 
-@Entry(
-    "tracked_locatable_waypoint",
-    "Beam and text waypoint that tracks active quest objectives.",
-    Colors.YELLOW,
-    "mdi:map-marker"
-)
+/**
+ * Legacy packet renderer retained as source reference only. It intentionally has no
+ * `@Entry` annotation, so it is absent from Typewriter's panel and generated schema.
+ */
+@Deprecated("Archived renderer; use static_waypoint.", level = DeprecationLevel.WARNING)
 class TrackedLocatableWaypointEntry(
     override val id: String = "",
     override val name: String = "",
@@ -488,9 +453,7 @@ private class FakeTextDisplay(val isSymbol: Boolean = false) {
 private class WaypointSlot {
     val beam = ActiveBeam()
     val label = FakeTextDisplay()
-    val labelGhost = FakeTextDisplay()
     val symbol = FakeTextDisplay(isSymbol = true)
-    val symbolGhost = FakeTextDisplay(isSymbol = true)
     var lastTargetLocation: Location? = null
     var lastVisualAnchor: Vector? = null
     var lastVisualBaseY: Double? = null
@@ -548,7 +511,7 @@ private enum class MotionProfile {
 // Global route index registry — shared across all entry types so visual, zone trigger,
 // and BetterHUD bridge all see the same progress for a given player+objective+route.
 // Key: "$playerUUID:$objectiveId:$effectiveRouteId"
-// Only TrackedLocatableWaypointDisplay writes (advances) this. Others read only.
+// static_waypoint is the primary writer. Auxiliary entries only read this state.
 internal val globalRouteIndices = ConcurrentHashMap<String, Int>()
 
 internal fun routeStateKey(playerUUID: java.util.UUID, objectiveId: String, effectiveRouteId: String): String =
@@ -656,7 +619,7 @@ private val glyphSouthwest by snippet("waypoint.direction.southwest", "↙")
 private val glyphWest      by snippet("waypoint.direction.west", "←")
 private val glyphNorthwest by snippet("waypoint.direction.northwest", "↖")
 
-private object DirectionGlyphs {
+internal object DirectionGlyphs {
     init {
         // The pre-snippets custom file is no longer read; point admins at snippets.yml.
         // One File.exists() stat, once per JVM (object init).
@@ -768,6 +731,7 @@ internal object WaypointStats {
 // Display
 // =============================================================================
 
+@Suppress("DEPRECATION")
 private class TrackedLocatableWaypointDisplay(
     private val entry: TrackedLocatableWaypointEntry,
 ) : AudienceDisplay(), TickableDisplay {
@@ -788,13 +752,6 @@ private class TrackedLocatableWaypointDisplay(
         when (entry.label.align) { TextAlignMode.LEFT -> 8; TextAlignMode.RIGHT -> 16; else -> 0 }
     private val labelBillboard: Byte =
         when (entry.label.billboard) { BillboardMode.FIXED -> 0; BillboardMode.VERTICAL -> 1; BillboardMode.HORIZONTAL -> 2; else -> 3 }.toByte()
-    private val ghostLabelEnabled: Boolean = entry.label.wallVisibility != WallVisibilityMode.OFF
-    private val ghostSymbolEnabled: Boolean = entry.symbol.wallVisibility != WallVisibilityMode.OFF
-    private val ghostEnabled: Boolean = ghostLabelEnabled || ghostSymbolEnabled
-    private val maxOcclusionDist: Double = maxOf(
-        if (ghostLabelEnabled) entry.label.ghostMaxDistance else 0.0,
-        if (ghostSymbolEnabled) entry.symbol.ghostMaxDistance else 0.0,
-    )
 
     override fun onPlayerAdd(player: Player) {
         states.computeIfAbsent(player.uniqueId) { PlayerWaypointState() }
@@ -851,9 +808,7 @@ private class TrackedLocatableWaypointDisplay(
                     state.slots.values.forEach { slot ->
                         slot.beam.reset()
                         slot.label.reset()
-                        slot.labelGhost.reset()
                         slot.symbol.reset()
-                        slot.symbolGhost.reset()
                         slot.lastTargetLocation = null
                         clearSlotVisualState(slot)
                     }
@@ -925,9 +880,7 @@ private class TrackedLocatableWaypointDisplay(
                 if (slot.glowEntityId != -1) { setEntityGlow(player, slot.glowEntityId, false); slot.glowEntityId = -1 }
                 destroyBeamSlot(player, slot.beam)
                 destroyFakeDisplay(player, slot.label)
-                destroyFakeDisplay(player, slot.labelGhost)
                 destroyFakeDisplay(player, slot.symbol)
-                destroyFakeDisplay(player, slot.symbolGhost)
                 clearSlotVisualState(slot)
                 // Clear route progress if objective disappeared and resetOnObjectiveChange is set
                 if (!key.startsWith("entity:")) {
@@ -1002,9 +955,7 @@ private class TrackedLocatableWaypointDisplay(
             if (slot.glowEntityId != -1) { setEntityGlow(player, slot.glowEntityId, false); slot.glowEntityId = -1 }
             destroyBeamSlot(player, slot.beam)
             destroyFakeDisplay(player, slot.label)
-            destroyFakeDisplay(player, slot.labelGhost)
             destroyFakeDisplay(player, slot.symbol)
-            destroyFakeDisplay(player, slot.symbolGhost)
             clearSlotVisualState(slot)
             return
         }
@@ -1054,7 +1005,6 @@ private class TrackedLocatableWaypointDisplay(
             // beam and label back without any slide streak.
             hideBeamSlot(player, slot.beam, state.tickSerial)
             hideFakeDisplay(player, slot.label, state.tickSerial)
-            hideFakeDisplay(player, slot.labelGhost, state.tickSerial)
             slot.lastBeamPointer = null
             slot.lastLabelLocation = null
             slot.lastVisualAnchor = null
@@ -1069,10 +1019,8 @@ private class TrackedLocatableWaypointDisplay(
                 val smoothedArrivedPos = smoothLocation(slot.lastSymbolLocation, arrivedPos, MotionProfile.SYMBOL_SNAP)
                 slot.lastSymbolLocation = smoothedArrivedPos
                 updateSymbolDisplay(player, slot, smoothedArrivedPos, entry.symbol.maxScale, 1.0f, TEXT_INTERP, bobY)
-                hideFakeDisplay(player, slot.symbolGhost, state.tickSerial)
             } else {
                 destroyFakeDisplay(player, slot.symbol)
-                destroyFakeDisplay(player, slot.symbolGhost)
                 slot.lastSymbolLocation = null
             }
             return
@@ -1093,7 +1041,6 @@ private class TrackedLocatableWaypointDisplay(
         if (distance <= 0.01) {
             destroyBeamSlot(player, slot.beam)
             destroyFakeDisplay(player, slot.label)
-            destroyFakeDisplay(player, slot.labelGhost)
             slot.lastVisualAnchor = null
             slot.lastVisualBaseY = null
             return
@@ -1287,13 +1234,9 @@ private class TrackedLocatableWaypointDisplay(
             else -> slot.lastVisualAnchor
         }
 
-        var occlusionComputed = false
-        var targetOccluded = false
-
         // --- Label ---
         if (!labelShouldBeVisible || verticalColumnMode) {
             hideFakeDisplay(player, slot.label, state.tickSerial)
-            hideFakeDisplay(player, slot.labelGhost, state.tickSerial)
             slot.lastLabelLocation = null
             if (verticalColumnMode) slot.lastVisualBaseY = null
         } else if (shouldUpdateTransform && visualAnchor != null) {
@@ -1311,49 +1254,6 @@ private class TrackedLocatableWaypointDisplay(
                 entityTypeName = target.entityTypeName,
                 routePointIndex = target.routePointIndex, routePointCount = target.routePointCount,
                 routePointName = target.routePointName, bobY = bobY)
-        }
-
-        // --- Ghost label (seeThrough=true, only when occluded or ALWAYS_GHOST_UNSAFE) ---
-        if (ghostLabelEnabled) {
-            val ghostLabelPos = slot.lastLabelLocation
-            val showGhostLabel = labelShouldBeVisible
-                && !verticalColumnMode
-                && ghostLabelPos != null
-                && distance <= entry.label.ghostMaxDistance
-                && shouldUpdateTransform
-                && when (entry.label.wallVisibility) {
-                    WallVisibilityMode.OFF -> false
-                    WallVisibilityMode.GHOST_WHEN_OCCLUDED -> {
-                        if (!occlusionComputed) {
-                            targetOccluded = isOccludedByBlocks(playerEyes, targetLocation, maxOcclusionDist)
-                            occlusionComputed = true
-                        }
-                        targetOccluded
-                    }
-                    WallVisibilityMode.ALWAYS_GHOST_UNSAFE -> true
-                }
-            if (showGhostLabel && ghostLabelPos != null) {
-                val ghostText = slot.label.lastComponent ?: Component.empty()
-                val ghostOpacityVal = (entry.label.ghostOpacity.coerceIn(0, 255) *
-                    if (entry.label.ghostIgnoreFov) 1.0 else fovAlphaFactor).roundToInt().coerceIn(0, 255)
-                val ghostScale = entry.label.scale * entry.label.ghostScaleMultiplier
-                val isFirstGhostFrame = !slot.labelGhost.isSpawned || slot.labelGhost.firstFrame
-                if (!slot.labelGhost.isSpawned) spawnFakeText(player, slot.labelGhost, ghostLabelPos.x, ghostLabelPos.y + bobY, ghostLabelPos.z)
-                val wasGhostHidden = slot.labelGhost.hidden
-                if (wasGhostHidden) teleportFakeDisplay(player, slot.labelGhost, ghostLabelPos, bobY)
-                sendFakeTextMeta(
-                    player, slot.labelGhost, ghostText,
-                    ghostScale, thinFactor,
-                    true, entry.label.shadow,
-                    ghostOpacityVal.toByte(),
-                    0, entry.label.lineWidth.coerceAtLeast(1),
-                    labelBillboard, labelAlignBits, labelInterp,
-                    defaultBackground = entry.label.ghostDefaultBackground,
-                )
-                if (!isFirstGhostFrame && !wasGhostHidden) teleportFakeDisplay(player, slot.labelGhost, ghostLabelPos, bobY)
-            } else {
-                hideFakeDisplay(player, slot.labelGhost, state.tickSerial)
-            }
         }
 
         // --- Symbol ---
@@ -1376,7 +1276,6 @@ private class TrackedLocatableWaypointDisplay(
                 }
             } else if (!shouldBeVisible) {
                 hideFakeDisplay(player, slot.symbol, state.tickSerial)
-                hideFakeDisplay(player, slot.symbolGhost, state.tickSerial)
                 slot.lastSymbolLocation = null
             } else if (shouldUpdateTransform && visualAnchor != null) {
                 // Scale quantized to 0.05 steps — the distance-driven lerp changed the float
@@ -1397,52 +1296,7 @@ private class TrackedLocatableWaypointDisplay(
             }
         } else {
             destroyFakeDisplay(player, slot.symbol)
-            destroyFakeDisplay(player, slot.symbolGhost)
             slot.lastSymbolLocation = null
-        }
-
-        // --- Ghost symbol (seeThrough=true, only when occluded or ALWAYS_GHOST_UNSAFE) ---
-        if (ghostSymbolEnabled && entry.symbol.enabled) {
-            val ghostSymbolPos = slot.lastSymbolLocation
-            val showGhostSymbol = shouldBeVisible
-                && !slot.arrivedLatch
-                && ghostSymbolPos != null
-                && distance <= entry.symbol.ghostMaxDistance
-                && shouldUpdateTransform
-                && when (entry.symbol.wallVisibility) {
-                    WallVisibilityMode.OFF -> false
-                    WallVisibilityMode.GHOST_WHEN_OCCLUDED -> {
-                        if (!occlusionComputed) {
-                            targetOccluded = isOccludedByBlocks(playerEyes, targetLocation, maxOcclusionDist)
-                            occlusionComputed = true
-                        }
-                        targetOccluded
-                    }
-                    WallVisibilityMode.ALWAYS_GHOST_UNSAFE -> true
-                }
-            if (showGhostSymbol && ghostSymbolPos != null) {
-                val ghostSymbolText = slot.symbol.lastComponent ?: Component.empty()
-                val ghostSymbolBaseScale = if (slot.symbolSnapped || verticalColumnMode) entry.symbol.minScale
-                    else ((lerp(entry.symbol.minScale.toDouble(), entry.symbol.maxScale.toDouble(),
-                        smoothstep(entry.symbol.nearDist, entry.symbol.farDist, distance)) * 20.0).roundToInt() / 20.0f)
-                val ghostSymbolScale = ghostSymbolBaseScale * entry.symbol.ghostScaleMultiplier
-                val isFirstGhostSymFrame = !slot.symbolGhost.isSpawned || slot.symbolGhost.firstFrame
-                if (!slot.symbolGhost.isSpawned) spawnFakeText(player, slot.symbolGhost, ghostSymbolPos.x, ghostSymbolPos.y + bobY, ghostSymbolPos.z)
-                val wasGhostSymHidden = slot.symbolGhost.hidden
-                if (wasGhostSymHidden) teleportFakeDisplay(player, slot.symbolGhost, ghostSymbolPos, bobY)
-                sendFakeTextMeta(
-                    player, slot.symbolGhost, ghostSymbolText,
-                    ghostSymbolScale, thinFactor,
-                    true, false,
-                    entry.symbol.ghostOpacity.coerceIn(0, 255).toByte(),
-                    0, 1000,
-                    3.toByte(), 0, labelInterp,
-                    defaultBackground = entry.symbol.ghostDefaultBackground,
-                )
-                if (!isFirstGhostSymFrame && !wasGhostSymHidden) teleportFakeDisplay(player, slot.symbolGhost, ghostSymbolPos, bobY)
-            } else {
-                hideFakeDisplay(player, slot.symbolGhost, state.tickSerial)
-            }
         }
 
         // --- Beam (every tick — the update cadence is internal policy, see INTERNAL_BEAM_TICK_RATE) ---
@@ -2204,9 +2058,7 @@ private class TrackedLocatableWaypointDisplay(
             if (slot.glowEntityId != -1) { setEntityGlow(player, slot.glowEntityId, false); slot.glowEntityId = -1 }
             destroyBeamSlot(player, slot.beam)
             destroyFakeDisplay(player, slot.label)
-            destroyFakeDisplay(player, slot.labelGhost)
             destroyFakeDisplay(player, slot.symbol)
-            destroyFakeDisplay(player, slot.symbolGhost)
             slot.lastTargetLocation = null
             clearSlotVisualState(slot)
         }
@@ -2315,11 +2167,9 @@ private class TrackedLocatableWaypointDisplay(
         billboard: Byte,
         alignBits: Int,
         interp: Int,
-        defaultBackground: Boolean = false,
     ) {
         if (!display.isSpawned) return
-        val flagsByte = ((if (shadow) 0x01 else 0) or (if (seeThrough) 0x02 else 0)
-            or (if (defaultBackground) 0x04 else 0) or alignBits).toByte()
+        val flagsByte = ((if (shadow) 0x01 else 0) or (if (seeThrough) 0x02 else 0) or alignBits).toByte()
         val finalScale = scale * thinFactor
         // First frame: duration 0 so the entity appears at full scale instantly at its
         // spawn position. Re-shows no longer need duration 0 here — the caller teleports
@@ -2467,7 +2317,7 @@ private class TrackedLocatableWaypointDisplay(
         sendFakeTextMeta(
             player, slot.label, text,
             entry.label.scale, thinFactor,
-            false, entry.label.shadow,
+            entry.label.seeThrough, entry.label.shadow,
             opacity.coerceIn(0, 255).toByte(),
             labelBgColor, entry.label.lineWidth.coerceAtLeast(1),
             labelBillboard, labelAlignBits, interp,
@@ -2547,18 +2397,6 @@ private class TrackedLocatableWaypointDisplay(
         // symbolSnapped is a latch too — a slot recycled after world change or stale sweep
         // must not wake up believing the symbol is still snapped to the old target.
         slot.symbolSnapped = false
-    }
-
-    private fun isOccludedByBlocks(from: Location, to: Location, maxDistance: Double): Boolean {
-        if (from.world != to.world) return false
-        val world = from.world ?: return false
-        val dx = to.x - from.x
-        val dy = to.y - from.y
-        val dz = to.z - from.z
-        val dist = sqrt(dx * dx + dy * dy + dz * dz)
-        if (dist <= 0.01 || dist > maxDistance) return false
-        val dir = Vector(dx / dist, dy / dist, dz / dist)
-        return world.rayTraceBlocks(from, dir, dist - 0.15, FluidCollisionMode.NEVER, true) != null
     }
 
     private fun pruneEntitySelectorCache(state: PlayerWaypointState) {
@@ -2792,7 +2630,7 @@ internal data class WaypointTarget(
 }
 
 // Read-only route application for zone trigger and BetterHUD.
-// Does NOT advance the route index — only the visual display (TrackedLocatableWaypointDisplay) advances.
+// Does NOT advance the route index — static_waypoint owns advancement.
 internal fun applyRouteReadOnly(
     player: Player,
     objectiveId: String,
@@ -2822,6 +2660,68 @@ internal fun applyRouteReadOnly(
         routePointIndex = nextPoint.first,
         routePointCount = resolvedPoints.size,
         routePointName = pointName,
+    )
+}
+
+/** Advances the shared route index. The primary visual entry is the only writer. */
+internal fun applyRouteAdvancing(
+    player: Player,
+    objectiveId: String,
+    routes: List<WaypointRoute>,
+    directTarget: WaypointTarget,
+): WaypointTarget {
+    if (directTarget.entityUUID != null) return directTarget
+    val route = routes.firstOrNull { it.objectiveId == objectiveId && it.points.isNotEmpty() }
+        ?: return directTarget
+    val resolved = route.points.mapIndexedNotNull { index, point ->
+        val position = runCatching { point.position.get(player) }.getOrNull()
+            ?: return@mapIndexedNotNull null
+        val location = runCatching { position.toBukkitLocation() }.getOrNull()
+            ?: return@mapIndexedNotNull null
+        Triple(index, point, Pair(position, location))
+    }
+    if (resolved.isEmpty()) return directTarget
+
+    val effectiveRouteId = route.routeId.ifBlank { objectiveId }
+    val key = routeStateKey(player.uniqueId, objectiveId, effectiveRouteId)
+    var index = globalRouteIndices.getOrDefault(key, 0).coerceIn(0, resolved.size)
+    val playerLocation = player.location
+
+    if (route.allowSkip) {
+        resolved.forEach { (pointIndex, point, pair) ->
+            val radius = point.radius.coerceAtLeast(0.1)
+            if (pointIndex >= index && pair.second.world == playerLocation.world &&
+                playerLocation.distanceSquared(pair.second) <= radius * radius
+            ) index = pointIndex + 1
+        }
+    } else {
+        resolved.firstOrNull { it.first == index }?.let { (_, point, pair) ->
+            val radius = point.radius.coerceAtLeast(0.1)
+            if (pair.second.world == playerLocation.world &&
+                playerLocation.distanceSquared(pair.second) <= radius * radius
+            ) index++
+        }
+    }
+
+    if (index >= resolved.size) {
+        if (!route.resetOnComplete) {
+            globalRouteIndices[key] = resolved.size
+            return directTarget
+        }
+        index = 0
+    }
+    globalRouteIndices[key] = index
+    val next = resolved.first { it.first >= index }
+    val location = next.third.second
+    return WaypointTarget(
+        objective = directTarget.objective,
+        position = next.third.first,
+        location = location,
+        distance = if (location.world == playerLocation.world)
+            playerLocation.distance(location) else Double.POSITIVE_INFINITY,
+        routePointIndex = next.first,
+        routePointCount = resolved.size,
+        routePointName = runCatching { next.second.name.get(player) }.getOrNull().orEmpty(),
     )
 }
 

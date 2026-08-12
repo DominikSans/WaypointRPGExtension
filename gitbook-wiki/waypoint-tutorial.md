@@ -1,194 +1,240 @@
-# Waypoint Tutorial
+# Waypoint tutorial
 
-This page shows how to start with `tracked_locatable_waypoint`, the main entry of the extension.
+This page creates a `static_waypoint` using the tested headpop server values as a V4 starting point.
 
-Use this entry when you want the player to see where their active objective is.
+{% hint style="info" %}
+The server preset was cleaned for V4. Historical fields that remain in old page JSON are intentionally excluded.
+{% endhint %}
 
-## 1. Create the entry
+{% stepper %}
+{% step %}
 
-In Typewriter, create:
+## Create the entry
 
-```txt
-tracked_locatable_waypoint
+Create a Typewriter locatable objective. In the same audience, create **Waypoint**:
+
+```text
+static_waypoint
 ```
 
-Use it under the audience that should see the waypoint. If it is placed globally, every valid player in that audience can receive the display.
+A common layout is:
 
-## 2. Choose what the player sees
+```text
+tracked_quest_audience
+├── location_objective
+└── static_waypoint
+```
 
-Start with:
+{% endstep %}
+
+{% step %}
+
+## Select the target
+
+The tested server uses:
 
 ```json
 {
   "general": {
-    "mode": "BOTH",
-    "selection": "CLOSEST",
-    "maxTargets": 1,
-    "arriveRadius": 2.0,
-    "hideOnArrive": true
-  }
-}
-```
-
-Recommended first values:
-
-| Field | Value | Why |
-|---|---:|---|
-| `mode` | `BOTH` | Shows text/icon and beam together. |
-| `selection` | `CLOSEST` | Easy to understand while testing. |
-| `maxTargets` | `1` | Keeps the first setup simple. |
-| `arriveRadius` | `2.0` | Good default for locations. |
-| `hideOnArrive` | `true` | Cleans the display when the target is reached. |
-
-## 3. Set target height
-
-For a location objective:
-
-```json
-{
+    "hideOnArrive": true,
+    "selection": "HIGHEST_PRIORITY",
+    "maxTargets": 5,
+    "arriveRadius": 1.5
+  },
   "target": {
-    "offset": 0.0,
-    "verticalThreshold": 10.0
+    "offset": 0.0
   }
 }
 ```
 
-For an NPC target, use an offset around `2.0` so the marker appears near head height.
+Use `maxTargets: 1` while learning if you want only one marker. Increase `target.offset` for an NPC or a low objective position.
 
-## 4. Configure the text
+{% endstep %}
+
+{% step %}
+
+## Configure the label
 
 ```json
 {
   "label": {
-    "text": "<gold>{name}</gold><newline><white>{distance} {direction}</white>",
-    "floatDist": 5.0,
-    "hideRange": 5.0,
-    "billboard": "CENTER",
-    "align": "CENTER"
+    "shadow": true,
+    "text": "<white>{name}</white><newline>{distance}<newline><white>{direction}</white>",
+    "height": 1.0,
+    "hideRange": 8.0,
+    "minScale": 2.0,
+    "maxScale": 8.0,
+    "nearDist": 18.0,
+    "farDist": 45.0,
+    "opacity": 255,
+    "lineWidth": 200
   }
 }
 ```
 
-Useful placeholders:
+`shadow` appears first in the Label group. Through-wall and shader behavior are internal and cannot be disabled from the panel.
 
-| Placeholder | Shows |
-|---|---|
-| `{name}` | Objective, route point, or entity name. |
-| `{distance}` | Distance to the current target. |
-| `{direction}` | Direction arrow from snippets. |
-| `{index}` | Current visible target number. |
-| `{total}` | Total visible targets. |
-| `{route_name}` | Current route point name. |
+{% endstep %}
 
-## 5. Add an icon
+{% step %}
+
+## Add the symbol
 
 ```json
 {
   "symbol": {
     "enabled": true,
-    "text": "<gold>◆</gold>",
-    "minScale": 3.0,
-    "maxScale": 5.0,
+    "shadow": false,
+    "text": "<white><font:images_rpg:emojis>佚</font></white>",
+    "minScale": 6.0,
+    "maxScale": 25.0,
+    "nearDist": 15.0,
+    "farDist": 45.0,
+    "offset": 0.5,
     "snapRange": 8.0,
     "snapLeave": 12.0,
-    "snapHeight": 3.0
+    "snapHeight": 3.0,
+    "scaleSpacing": 0.25
   }
 }
 ```
 
-You can use normal Unicode, MiniMessage colors, or a resource-pack font glyph.
+The glyph `佚` is the server reference and requires the `images_rpg:emojis` font. Use `<gold>◆</gold>` if your pack does not provide that font.
 
-## 6. Add the beam
+`symbol.shadow` is independent from `label.shadow`. Keep `snapLeave` greater than `snapRange`.
+
+{% endstep %}
+
+{% step %}
+
+## Add the beam
 
 ```json
 {
   "beam": {
     "enabled": true,
-    "outer": "LIME_STAINED_GLASS",
-    "inner": "LIME_CONCRETE",
-    "height": 150.0,
-    "dynamicHeight": true,
     "fullBright": true,
-    "rotateLikeBeacon": false
+    "rotateInner": true,
+    "outer": "PURPLE_STAINED_GLASS",
+    "inner": "PURPLE_CONCRETE_POWDER",
+    "width": 0.3,
+    "depth": 0.3,
+    "coreWidth": 0.15,
+    "coreDepth": 0.15,
+    "height": 150.0,
+    "depthBelow": 5.0,
+    "labelClearance": 1.0
   }
 }
 ```
 
-Use `dynamicHeight` when targets can be above or below the player.
+The inner core rotates while the outer layer remains fixed. `labelClearance` keeps the beam physically behind label and symbol.
 
-Use `rotateLikeBeacon` when you want the inner core to spin while the outer layer stays still.
+Beam height and update cadence are controlled internally. V4 does not expose the old dynamic or follow controls.
 
-## 7. Add route points when needed
+{% endstep %}
 
-Routes are part of the same waypoint entry. Use them when the player should visit checkpoints before the final objective.
+{% step %}
+
+## Configure bob
 
 ```json
 {
-  "routes": [
-    {
-      "objectiveId": "main_objective",
-      "routeId": "main_path",
-      "allowSkip": true,
-      "resetOnObjectiveChange": true,
-      "resetOnComplete": false,
-      "points": [
-        {
-          "name": "Bridge",
-          "position": "bridge_position",
-          "radius": 3.0
-        },
-        {
-          "name": "Gate",
-          "position": "gate_position",
-          "radius": 3.0
-        }
-      ]
-    }
-  ]
+  "bob": {
+    "enabled": true,
+    "height": 0.4,
+    "speed": 0.6
+  }
 }
 ```
 
-When the player reaches `Bridge`, the waypoint moves to `Gate`. When the route is complete, it points to the final objective unless `resetOnComplete` is enabled.
+These are the tested server values. For a subtle effect, try height `0.06` and speed `1.2`.
+
+{% endstep %}
+
+{% step %}
+
+## Load the shaders and test
+
+Merge this generated folder into the final server resource pack:
+
+```text
+plugins/WaypointRPGExtension/resourcepack/
+```
+
+Restart after replacing the extension. Track the quest, sprint toward the objective, and test again from behind a wall.
+
+{% endstep %}
+{% endstepper %}
 
 ## Complete starter example
 
 ```json
 {
-  "type": "tracked_locatable_waypoint",
+  "type": "static_waypoint",
   "id": "main_quest_waypoint",
   "name": "Main Quest Waypoint",
   "general": {
-    "mode": "BOTH",
-    "selection": "CLOSEST",
-    "maxTargets": 1,
-    "arriveRadius": 2.0,
-    "hideOnArrive": true
+    "hideOnArrive": true,
+    "selection": "HIGHEST_PRIORITY",
+    "maxTargets": 5,
+    "arriveRadius": 1.5
   },
   "target": {
-    "offset": 0.0,
-    "verticalThreshold": 10.0
+    "offset": 0.0
   },
   "label": {
-    "text": "<gold>{name}</gold><newline><white>{distance} {direction}</white>",
-    "floatDist": 5.0,
-    "hideRange": 5.0
+    "shadow": true,
+    "text": "<white>{name}</white><newline>{distance}<newline><white>{direction}</white>",
+    "height": 1.0,
+    "hideRange": 8.0,
+    "minScale": 2.0,
+    "maxScale": 8.0,
+    "nearDist": 18.0,
+    "farDist": 45.0,
+    "opacity": 255,
+    "lineWidth": 200
   },
   "symbol": {
     "enabled": true,
-    "text": "<gold>◆</gold>"
+    "shadow": false,
+    "text": "<white><font:images_rpg:emojis>佚</font></white>",
+    "minScale": 6.0,
+    "maxScale": 25.0,
+    "nearDist": 15.0,
+    "farDist": 45.0,
+    "offset": 0.5,
+    "snapRange": 8.0,
+    "snapLeave": 12.0,
+    "snapHeight": 3.0,
+    "scaleSpacing": 0.25
   },
   "beam": {
     "enabled": true,
-    "outer": "LIME_STAINED_GLASS",
-    "inner": "LIME_CONCRETE",
-    "dynamicHeight": true,
-    "fullBright": true
+    "fullBright": true,
+    "rotateInner": true,
+    "outer": "PURPLE_STAINED_GLASS",
+    "inner": "PURPLE_CONCRETE_POWDER",
+    "width": 0.3,
+    "depth": 0.3,
+    "coreWidth": 0.15,
+    "coreDepth": 0.15,
+    "height": 150.0,
+    "depthBelow": 5.0,
+    "labelClearance": 1.0
   },
   "bob": {
     "enabled": true,
-    "height": 0.06,
-    "speed": 1.2
+    "height": 0.4,
+    "speed": 0.6
+  },
+  "routes": [],
+  "integrations": {
+    "entityGlow": false,
+    "entityTargets": [],
+    "glowRange": 20.0
   }
 }
 ```
 
+Use [Entry list](entry-list.md) for every field, [Integrations](integrations.md) for routes and companion entries, and [Placeholders](placeholders.md) for text and custom glyphs.

@@ -1,5 +1,7 @@
 # Examples — WaypointRPGExtension V2
 
+> **ARCHIVED:** los ejemplos de `tracked_locatable_waypoint` documentan el renderer V2 histórico. Ese ID ya no está registrado. Para contenido activo usa `static_waypoint` y la documentación principal.
+
 > **Versión:** `v0.7.0-dev`  
 > **Descripción:** referencia breve de campos y ejemplos de uso del esquema V2, incluye entity targets (Paso 3), zone trigger V2 (Paso 4) y BetterHUD bridge V2 (Paso 5).  
 > **Modificado:** domingo, 5 de julio de 2026, 18:15 `(-05:00)` (America/Lima).

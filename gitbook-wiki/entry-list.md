@@ -1,0 +1,147 @@
+# Entry list
+
+V4 registers three public entries. Boolean controls appear first inside the main Waypoint configuration groups.
+
+## `static_waypoint`
+
+The main visual entry, displayed as **Waypoint** in the Typewriter panel.
+
+### `general`
+
+| Field | Type | Default | Description |
+|---|---|---:|---|
+| `hideOnArrive` | Boolean | `true` | Hides label and beam after arrival; the snapped symbol can remain. |
+| `selection` | Enum | `HIGHEST_PRIORITY` | Uses `HIGHEST_PRIORITY` or `CLOSEST`. |
+| `maxTargets` | Integer | `5` | Maximum simultaneous targets, clamped to 16. |
+| `arriveRadius` | Number | `1.5` | Distance that counts as arrival. |
+
+### `target`
+
+| Field | Type | Default | Description |
+|---|---|---:|---|
+| `offset` | Number | `0.0` | Vertical offset added to the target position. |
+
+### `label`
+
+| Field | Type | Default | Description |
+|---|---|---:|---|
+| `shadow` | Boolean | `true` | Draws label text shadow. |
+| `text` | Var<String> | name + distance | MiniMessage template. |
+| `height` | Number | `1.0` | Height above the target anchor. |
+| `floatDist` | Number | `5.0` | Compatibility value retained from V3; V4 movement uses its internal 70–72 block transition. |
+| `hideRange` | Number | `8.0` | Hides label text inside this distance. |
+| `minScale` | Float | `1.0` | Label scale at `nearDist`. |
+| `maxScale` | Float | `8.0` | Label scale at `farDist`. |
+| `nearDist` | Number | `5.0` | Start of scale interpolation. |
+| `farDist` | Number | `50.0` | End of scale interpolation. |
+| `opacity` | Integer | `255` | Text opacity from 0 to 255. |
+| `lineWidth` | Integer | `255` | Text wrapping width. |
+
+Through-wall rendering, shader correction, and smart occlusion are hardcoded safeguards. Every four ticks, label and symbol switch to the protected see-through shader pass when blocks obstruct the view; while unobstructed they use the regular depth-writing pass. Occlusion samples stable, non-bobbing centers for label and symbol. This prevents the projected edge of a highly scaled label from producing a false wall hit against distant terrain when the camera is near ground level. These controls are intentionally absent from the panel.
+
+Their billboard mode is hardcoded to `VERTICAL` with centered text alignment and entity pitch normalized to `0°`, matching a yaw-only hologram: label and symbol turn laterally toward the player but remain upright.
+
+### `symbol`
+
+| Field | Type | Default | Description |
+|---|---|---:|---|
+| `enabled` | Boolean | `true` | Shows the symbol. |
+| `shadow` | Boolean | `false` | Draws symbol shadow independently from label shadow. |
+| `text` | Var<String> | `<gold>◆</gold>` | MiniMessage symbol or custom glyph. |
+| `minScale` | Float | `3.0` | Near/snapped scale. |
+| `maxScale` | Float | `25.0` | Far scale. |
+| `nearDist` | Number | `5.0` | Start of scale interpolation. |
+| `farDist` | Number | `150.0` | End of scale interpolation. |
+| `offset` | Number | `0.5` | Height above the label. |
+| `snapRange` | Number | `8.0` | Distance at which snap mode starts. |
+| `snapLeave` | Number | `12.0` | Distance at which snap mode ends. Keep it above `snapRange`. |
+| `snapHeight` | Number | `3.0` | Height of the snapped symbol. |
+| `scaleSpacing` | Number | `0.16` | Extra vertical spacing based on symbol scale. |
+
+### `beam`
+
+| Field | Type | Default | Description |
+|---|---|---:|---|
+| `enabled` | Boolean | `true` | Shows the private two-layer beam. |
+| `fullBright` | Boolean | `true` | Uses maximum block and sky brightness. |
+| `rotateInner` | Boolean | `false` | Rotates only the inner core. |
+| `outer` | Material | `LIME_STAINED_GLASS` | Outer block material. |
+| `inner` | Material | `LIME_CONCRETE` | Inner block material. |
+| `width` | Float | `0.5` | Outer width. |
+| `depth` | Float | `0.5` | Outer depth. |
+| `coreWidth` | Float | `0.25` | Inner width. |
+| `coreDepth` | Float | `0.25` | Inner depth. |
+| `height` | Float | `150.0` | Extension above player and target. |
+| `depthBelow` | Float | `20.0` | Extension below player and target. |
+| `labelClearance` | Number | `0.12` | Extra physical separation from label and symbol. |
+
+Beam height, near-target thinning, rotation speed, and update cadence are internal policies.
+
+### `bob`
+
+| Field | Type | Default | Description |
+|---|---|---:|---|
+| `enabled` | Boolean | `true` | Enables vertical floating motion. |
+| `height` | Number | `0.06` | Bob amplitude in blocks. |
+| `speed` | Number | `1.2` | Bob cycles per second. |
+
+### `routes`
+
+| Field | Type | Default | Description |
+|---|---|---:|---|
+| `objectiveId` | String | empty | Objective that owns the route. |
+| `routeId` | String | empty | Shared route-progress key; blank uses `objectiveId`. |
+| `allowSkip` | Boolean | `true` | Allows reaching a later point to advance the route. |
+| `resetOnObjectiveChange` | Boolean | `true` | Clears progress when the objective deactivates. |
+| `resetOnComplete` | Boolean | `false` | Loops after the final point instead of returning to the objective. |
+| `points` | List | empty | Ordered route points. |
+
+Each point has `name`, `position`, and `radius`.
+
+### `integrations`
+
+| Field | Type | Default | Description |
+|---|---|---:|---|
+| `entityGlow` | Boolean | `false` | Applies a private glow to resolved Bukkit entities. |
+| `entityTargets` | List | empty | Additional entity or Typewriter NPC targets. |
+| `glowRange` | Number | `20.0` | Maximum private-glow distance. |
+
+Entity target fields:
+
+| Field | Description |
+|---|---|
+| `targetType` | `UUID`, `NAME`, `SCOREBOARD_TAG`, or `TYPEWRITER_NPC`. |
+| `uuid`, `name`, `tag`, `npcEntryId` | Lookup value for the selected type. |
+| `displayName` | Optional MiniMessage label override. |
+| `maxDistance` | Search range for name/tag resolution. |
+| `priority` | Used by `HIGHEST_PRIORITY`. |
+
+## `waypoint_zone_trigger`
+
+| Field | Default | Description |
+|---|---:|---|
+| `radius` | `5.0` | Detection radius. |
+| `targetMode` | `ANY_ACTIVE_TARGET` | Objectives, all targets, or active route point. |
+| `maxTargets` | `5` | Maximum targets checked. |
+| `selection` | `CLOSEST` | Sort order. |
+| `triggerPerTarget` | `false` | Fires separately for every target. |
+| `triggerOnce` | `false` | Holds after the first enter event. |
+| `resetOnExit` | `true` | Rearms after exit. |
+| `entityTargets` | empty | Additional entity targets. |
+| `routes` | empty | Routes used by active-route-point mode. |
+| `onEnter` / `onExit` | empty | Typewriter trigger references. |
+
+## `waypoint_betterhud_bridge`
+
+| Field | Default | Description |
+|---|---:|---|
+| `iconName` | `default` | BetterHUD compass element name. |
+| `pointNamePrefix` | `waypoint_` | Prefix for generated point IDs. |
+| `targetMode` | `ANY_ACTIVE_TARGET` | Objectives, entities, or both. |
+| `maxTargets` | `5` | Maximum compass points. |
+| `selection` | `CLOSEST` | Sort order. |
+| `arriveRadius` | `0.0` | Hides points inside this distance; zero disables hiding. |
+| `entityTargets` | empty | Additional entity/NPC targets. |
+| `routes` | empty | Optional route-position synchronization. |
+
+BetterHUD is optional and accessed reflectively. Its absence does not prevent V4 from loading.

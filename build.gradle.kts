@@ -6,7 +6,9 @@ plugins {
 group = "cg.headpop"
 version = "1.0.0"
 
-val twEngineVersion = "0.9.0-beta-174"
+val twEngineVersion = providers.gradleProperty("twEngineVersion")
+    .orElse("0.9.0-beta-173")
+    .get()
 
 repositories {
     mavenCentral()
@@ -29,11 +31,7 @@ dependencies {
     compileOnly(fileTree("libs") { include("*.jar") })
     // PacketEvents is provided at runtime by Typewriter; compileOnly for beam packet API.
     compileOnly("com.github.retrooper:packetevents-spigot:2.9.4")
-    // BetterHUD integration — optional at runtime; entry gracefully no-ops if plugin absent.
-    compileOnly("io.github.toxicity188:BetterHud-standard-api:1.14.1")
-    compileOnly("io.github.toxicity188:BetterHud-bukkit-api:1.14.1")
-    // BetterCommand is a runtime-scoped transitive dep of BetterHud-standard-api; needed for compile.
-    compileOnly("io.github.toxicity188:BetterCommand:1.4.3")
+    // BetterHUD is accessed reflectively by its optional bridge, so it is not a load-time dependency.
 }
 
 typewriter {

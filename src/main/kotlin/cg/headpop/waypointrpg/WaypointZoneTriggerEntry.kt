@@ -29,7 +29,7 @@ import java.util.concurrent.ConcurrentHashMap
  * - ANY_ACTIVE_TARGET  — objectives + entity targets from [entityTargets] list.
  * - ACTIVE_ROUTE_POINT — triggers at the current route point instead of the final objective position.
  *                        Requires [routes] to be configured with matching objectiveId.
- *                        Route index advances only when the visual tracked_locatable_waypoint entry is present.
+ *                        Route index advances only when the visual static_waypoint entry is present.
  */
 enum class ZoneTriggerTargetMode {
     OBJECTIVES_ONLY,

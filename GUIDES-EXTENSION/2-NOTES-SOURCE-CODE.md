@@ -11,7 +11,7 @@
 - `WaypointBetterHudBridgeEntry.kt`: integración BetterHUD opcional.
 - Beam, label y symbol son entidades packet-only por jugador.
 
-> `simple_tracked_waypoint` (SimpleTrackedWaypointEntry) fue eliminado en fase 7. No existe adaptador de compatibilidad. Usa `tracked_locatable_waypoint` directamente.
+> `simple_tracked_waypoint` y `tracked_locatable_waypoint` están archivados y no se registran. Usa `static_waypoint`.
 
 ## Problemas y soluciones
 
@@ -133,7 +133,7 @@ Los NPCs de Typewriter son fake entities gestionadas por EntityLib (packets). No
 
 **Glyphs de `{direction}` — snippets nativos de Typewriter**: los 10 símbolos (`up/down/north/northeast/east/southeast/south/southwest/west/northwest`) son snippets del engine bajo las claves `waypoint.direction.*` en `plugins/Typewriter/snippets.yml`. Defaults: `▲ ▼ ↑ ↗ → ↘ ↓ ↙ ← ↖`. Mecánica verificada en el bytecode de `engine-paper-0.9.0` (`SnippetDatabaseImpl`): el engine escribe cada default en el yml la primera vez que se usa, sirve toda lectura desde un cache en memoria (un lookup de mapa, sin I/O de disco ni allocations por tick) y refresca con `/tw reload`. Los delegates `by snippet(...)` DEBEN declararse a nivel de archivo — `Snippet<T>` implementa `ReadOnlyProperty<Nothing?, T>`, no compila dentro de un `object`. `DirectionGlyphs.get(key)` queda como único punto de resolución (when sobre los 10 delegates). Mismo patrón que `RoadNetworkExtension` oficial (misma versión). El archivo custom anterior `direction-glyphs.yml` (en `plugins/Typewriter/`) ya no se lee; si existe, se loguea un warning una sola vez al cargar la clase.
 
-**Placeholders nativos de Typewriter para glyphs**: el entry `tracked_locatable_waypoint` expone `%typewriter_<entry-id>:direction:up%`, `%typewriter_<entry-id>:direction:north%`, etc. vía `PlaceholderEntry.parser()`. Snippets ≠ placeholders: el snippet es un valor de configuración server-side que el código lee por delegate; el placeholder es texto expandido para chat/PAPI. Ambos conviven: el placeholder resuelve leyendo el mismo `DirectionGlyphs.get`, así que un cambio en `snippets.yml` se refleja en los dos.
+**Placeholders nativos de Typewriter para glyphs**: el entry `static_waypoint` expone `%typewriter_<entry-id>:direction:up%`, `%typewriter_<entry-id>:direction:north%`, etc. vía `PlaceholderEntry.parser()`. Snippets ≠ placeholders: el snippet es un valor de configuración server-side que el código lee por delegate; el placeholder es texto expandido para chat/PAPI. Ambos conviven: el placeholder resuelve leyendo el mismo `DirectionGlyphs.get`, así que un cambio en `snippets.yml` se refleja en los dos.
 
 ## Hardening visual — lifecycle, interpolación y cleanup (auditoría v0.7)
 

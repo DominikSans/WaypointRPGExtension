@@ -1,14 +1,14 @@
 # Routes V2 — Reference
 
 > **Versión:** `v0.6.0-dev`  
-> **Descripción:** Referencia completa del sistema de rutas manuales en `tracked_locatable_waypoint`, `waypoint_zone_trigger` y `waypoint_betterhud_bridge`.  
+> **Descripción:** Referencia histórica del sistema de rutas, ahora escrito por `static_waypoint` y leído por `waypoint_zone_trigger` y `waypoint_betterhud_bridge`.
 > **Modificado:** jueves, 3 de julio de 2026 (America/Lima).
 
 ## Qué hace
 
 Una ruta manual guía al jugador paso a paso hacia un objective, mostrando un route point intermedio en lugar del objetivo final hasta que el jugador llegue a cada punto.
 
-El índice de progreso se guarda en `globalRouteIndices` (compartido entre entries). Solo el visual entry (`tracked_locatable_waypoint`) avanza el índice. Zone trigger y BetterHUD leen el mismo índice para mantenerse sincronizados.
+El índice de progreso se guarda en `globalRouteIndices` (compartido entre entries). Solo el visual entry (`static_waypoint`) avanza el índice. Zone trigger y BetterHUD leen el mismo índice para mantenerse sincronizados.
 
 ---
 

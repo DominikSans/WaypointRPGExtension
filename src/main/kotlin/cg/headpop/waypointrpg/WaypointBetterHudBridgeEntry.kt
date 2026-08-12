@@ -9,13 +9,10 @@ import com.typewritermc.engine.paper.entry.entries.AudienceDisplay
 import com.typewritermc.engine.paper.entry.entries.AudienceEntry
 import com.typewritermc.engine.paper.entry.entries.TickableDisplay
 import com.typewritermc.engine.paper.plugin
-import kr.toxicity.hud.api.BetterHudAPI
-import kr.toxicity.hud.api.adapter.LocationWrapper
-import kr.toxicity.hud.api.adapter.WorldWrapper
-import kr.toxicity.hud.api.player.PointedLocation
-import kr.toxicity.hud.api.player.PointedLocationSource
 import org.bukkit.Bukkit
 import org.bukkit.entity.Player
+import java.lang.reflect.Constructor
+import java.lang.reflect.Method
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -80,6 +77,137 @@ private data class PlayerHudState(
 // for both static and moving targets without per-tick overhead.
 private const val HUD_UPDATE_INTERVAL_TICKS = 5
 
+/**
+ * Reflection keeps BetterHUD genuinely optional. Typewriter scans every class in an
+ * extension while registering events, so even an unreachable direct API reference
+ * would make the whole extension fail to load when BetterHUD is absent.
+ */
+private object BetterHudAccess {
+    private data class Api(
+        val inst: Method,
+        val playerManager: Method,
+        val getHudPlayer: Method,
+        val pointers: Method,
+        val update: Method,
+        val pointName: Method,
+        val worldConstructor: Constructor<*>,
+        val locationConstructor: Constructor<*>,
+        val pointConstructor: Constructor<*>,
+        val internalSource: Any,
+    )
+
+    @Volatile private var initialized = false
+    @Volatile private var api: Api? = null
+    @Volatile private var warned = false
+
+    fun available(): Boolean {
+        if (Bukkit.getPluginManager().getPlugin("BetterHud")?.isEnabled != true) {
+            warnOnce("BetterHUD not found. waypoint_betterhud_bridge is disabled.")
+            return false
+        }
+        return loadApi() != null
+    }
+
+    fun hudPlayer(uuid: UUID): Any? {
+        val access = loadApi() ?: return null
+        return runCatching {
+            val instance = access.inst.invoke(null)
+            val manager = access.playerManager.invoke(instance)
+            access.getHudPlayer.invoke(manager, uuid)
+        }.onFailure { warnOnce("BetterHUD API access failed: ${it.message}") }.getOrNull()
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    fun pointers(hudPlayer: Any): MutableCollection<Any>? {
+        val access = loadApi() ?: return null
+        return runCatching {
+            access.pointers.invoke(hudPlayer) as MutableCollection<Any>
+        }.onFailure { warnOnce("BetterHUD pointer access failed: ${it.message}") }.getOrNull()
+    }
+
+    fun pointName(point: Any): String? = runCatching {
+        loadApi()?.pointName?.invoke(point) as? String
+    }.getOrNull()
+
+    fun createPoint(
+        name: String,
+        icon: String,
+        world: String,
+        x: Double,
+        y: Double,
+        z: Double,
+    ): Any? {
+        val access = loadApi() ?: return null
+        return runCatching {
+            val worldWrapper = access.worldConstructor.newInstance(world)
+            val location = access.locationConstructor.newInstance(worldWrapper, x, y, z, 0f, 0f)
+            access.pointConstructor.newInstance(access.internalSource, name, icon, location)
+        }.onFailure { warnOnce("BetterHUD point creation failed: ${it.message}") }.getOrNull()
+    }
+
+    fun update(hudPlayer: Any) {
+        val access = loadApi() ?: return
+        runCatching { access.update.invoke(hudPlayer) }
+            .onFailure { warnOnce("BetterHUD update failed: ${it.message}") }
+    }
+
+    private fun loadApi(): Api? {
+        if (initialized) return api
+        synchronized(this) {
+            if (initialized) return api
+            api = runCatching {
+                // Paper isolates plugin classloaders. Resolve the optional API through
+                // BetterHUD's own loader instead of Typewriter's extension loader.
+                val betterHudPlugin = Bukkit.getPluginManager().getPlugin("BetterHud")
+                    ?: error("BetterHUD plugin is not loaded")
+                val loader = betterHudPlugin.javaClass.classLoader
+                fun apiClass(name: String) = Class.forName(name, true, loader)
+                val apiClass = apiClass("kr.toxicity.hud.api.BetterHudAPI")
+                val betterHudClass = apiClass("kr.toxicity.hud.api.BetterHud")
+                val playerManagerClass = apiClass("kr.toxicity.hud.api.manager.PlayerManager")
+                val hudPlayerClass = apiClass("kr.toxicity.hud.api.player.HudPlayer")
+                val pointClass = apiClass("kr.toxicity.hud.api.player.PointedLocation")
+                val sourceClass = apiClass("kr.toxicity.hud.api.player.PointedLocationSource")
+                val locationClass = apiClass("kr.toxicity.hud.api.adapter.LocationWrapper")
+                val worldClass = apiClass("kr.toxicity.hud.api.adapter.WorldWrapper")
+                val internal = sourceClass.enumConstants.first { (it as Enum<*>).name == "INTERNAL" }
+                Api(
+                    inst = apiClass.getMethod("inst"),
+                    playerManager = betterHudClass.getMethod("getPlayerManager"),
+                    getHudPlayer = playerManagerClass.getMethod("getHudPlayer", UUID::class.java),
+                    pointers = hudPlayerClass.getMethod("pointers"),
+                    update = hudPlayerClass.getMethod("update"),
+                    pointName = pointClass.getMethod("name"),
+                    worldConstructor = worldClass.getConstructor(String::class.java),
+                    locationConstructor = locationClass.getConstructor(
+                        worldClass,
+                        Double::class.javaPrimitiveType,
+                        Double::class.javaPrimitiveType,
+                        Double::class.javaPrimitiveType,
+                        Float::class.javaPrimitiveType,
+                        Float::class.javaPrimitiveType,
+                    ),
+                    pointConstructor = pointClass.getConstructor(
+                        sourceClass,
+                        String::class.java,
+                        String::class.java,
+                        locationClass,
+                    ),
+                    internalSource = internal,
+                )
+            }.onFailure { warnOnce("BetterHUD API is incompatible: ${it.message}") }.getOrNull()
+            initialized = true
+            return api
+        }
+    }
+
+    private fun warnOnce(message: String) {
+        if (warned) return
+        warned = true
+        Bukkit.getLogger().warning("[WaypointRPG] $message")
+    }
+}
+
 private class WaypointBetterHudBridgeDisplay(
     private val entry: WaypointBetterHudBridgeEntry,
 ) : AudienceDisplay(), TickableDisplay {
@@ -134,7 +262,8 @@ private class WaypointBetterHudBridgeDisplay(
 
     private fun syncPoints(player: Player) {
         if (!betterHudAvailable()) return
-        val hudPlayer = BetterHudAPI.inst().playerManager.getHudPlayer(player.uniqueId) ?: return
+        val hudPlayer = BetterHudAccess.hudPlayer(player.uniqueId) ?: return
+        val pointers = BetterHudAccess.pointers(hudPlayer) ?: return
         val state = hudState.getOrPut(player.uniqueId) { PlayerHudState() }
 
         val targets = resolveTargets(player)
@@ -157,7 +286,7 @@ private class WaypointBetterHudBridgeDisplay(
         // Remove stale or now-hidden points
         val toRemove = state.activeIds - visible.keys
         for (id in toRemove) {
-            hudPlayer.pointers().removeIf { it.name == id }
+            pointers.removeIf { BetterHudAccess.pointName(it) == id }
             state.activeIds.remove(id)
             state.knownPositions.remove(id)
             changed = true
@@ -180,23 +309,18 @@ private class WaypointBetterHudBridgeDisplay(
             if (isNew || posChanged) {
                 if (!isNew) {
                     // Position changed — remove old before re-adding
-                    hudPlayer.pointers().removeIf { it.name == id }
+                    pointers.removeIf { BetterHudAccess.pointName(it) == id }
                 }
-                hudPlayer.pointers().add(
-                    PointedLocation(
-                        PointedLocationSource.INTERNAL,
-                        id,
-                        entry.iconName,
-                        LocationWrapper(WorldWrapper(worldName), loc.x, loc.y, loc.z, 0f, 0f)
-                    )
-                )
+                BetterHudAccess.createPoint(
+                    id, entry.iconName, worldName, loc.x, loc.y, loc.z
+                )?.let(pointers::add) ?: continue
                 state.activeIds.add(id)
                 state.knownPositions[id] = newPos
                 changed = true
             }
         }
 
-        if (changed) hudPlayer.update()
+        if (changed) BetterHudAccess.update(hudPlayer)
     }
 
     // --- Cleanup ---
@@ -204,10 +328,14 @@ private class WaypointBetterHudBridgeDisplay(
     private fun removeAllPoints(player: Player) {
         val state = hudState[player.uniqueId] ?: return
         if (state.activeIds.isNotEmpty() && betterHudAvailable()) {
-            val hudPlayer = BetterHudAPI.inst().playerManager.getHudPlayer(player.uniqueId)
+            val hudPlayer = BetterHudAccess.hudPlayer(player.uniqueId)
             if (hudPlayer != null) {
-                state.activeIds.forEach { id -> hudPlayer.pointers().removeIf { it.name == id } }
-                hudPlayer.update()
+                BetterHudAccess.pointers(hudPlayer)?.let { pointers ->
+                    state.activeIds.forEach { id ->
+                        pointers.removeIf { BetterHudAccess.pointName(it) == id }
+                    }
+                    BetterHudAccess.update(hudPlayer)
+                }
             }
         }
         state.activeIds.clear()
@@ -226,20 +354,6 @@ private class WaypointBetterHudBridgeDisplay(
     }
 
     companion object {
-        @Volatile private var checked = false
-        @Volatile private var available = false
-
-        fun betterHudAvailable(): Boolean {
-            if (!checked) {
-                available = runCatching {
-                    Bukkit.getPluginManager().getPlugin("BetterHud")?.isEnabled == true
-                }.getOrDefault(false)
-                if (!available) {
-                    Bukkit.getLogger().warning("[WaypointRPG] BetterHUD not found. waypoint_betterhud_bridge is disabled.")
-                }
-                checked = true
-            }
-            return available
-        }
+        fun betterHudAvailable(): Boolean = BetterHudAccess.available()
     }
 }
