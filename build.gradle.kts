@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "cg.headpop"
-version = "1.0.0"
+version = "3.0.3"
 
 val twEngineVersion = providers.gradleProperty("twEngineVersion")
     .orElse("0.9.0-beta-173")

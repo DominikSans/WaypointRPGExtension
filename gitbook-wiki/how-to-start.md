@@ -1,6 +1,6 @@
 # How to Start
 
-WaypointRPGExtension V4 adds personal RPG-style waypoint visuals to Typewriter quests. Players do not need a client mod.
+WaypointRPGExtension v3.0.3 adds personal RPG-style waypoint visuals to Typewriter quests. Players do not need a client mod.
 
 ## What it can show
 
@@ -28,11 +28,19 @@ WaypointRPGExtension V4 adds personal RPG-style waypoint visuals to Typewriter q
 
 | Entry | Use it for |
 |---|---|
-| `static_waypoint` | Main waypoint: label, symbol, beam, routes, entities, and glow. It appears as **Waypoint** in the panel. |
+| `static_waypoint` | One global renderer for label, symbol, beam, and entity glow. It appears as **Waypoint** in the panel. |
+| `quest_waypoint` | Selects a Quest and gives all its objectives a simple preset or custom theme. |
+| `waypoint_theme` | Advanced reusable beam, label, and symbol appearance. |
+| `waypoint_path` | Selects a location objective and defines only its ordered checkpoints. |
+| `entity_waypoint` | Registers one Bukkit entity or selectable Typewriter entity for its active audience. |
 | `waypoint_zone_trigger` | Fires Typewriter triggers when a player enters or leaves a target area. |
 | `waypoint_betterhud_bridge` | Sends active targets to BetterHUD compass points. |
 
 `tracked_locatable_waypoint` is retained in source only. It is not registered and does not appear in the panel.
+
+The recommended page has one `static_waypoint` beneath `world_audience`. Quest pages
+only define objectives, routes, and entity targets. The central player registry makes
+the same active targets available to the renderer, zone trigger, and BetterHUD bridge.
 
 ## Resource-pack shaders
 

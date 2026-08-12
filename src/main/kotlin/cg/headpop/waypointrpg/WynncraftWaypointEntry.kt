@@ -163,8 +163,6 @@ data class WynncraftBobConfig(
 data class WynncraftIntegrationConfig(
     @Help("Show a private glow on Bukkit entity targets.")
     val entityGlow: Boolean = false,
-    @Help("Additional entity targets.")
-    val entityTargets: List<EntityWaypointTarget> = emptyList(),
     @Help("Maximum distance for the private entity glow.")
     val glowRange: Double = 20.0,
 )
@@ -197,10 +195,7 @@ class WynncraftWaypointEntry(
     @Help("Float motion shared by text and icon.")
     val bob: WynncraftBobConfig = WynncraftBobConfig(),
 
-    @Help("Guided path points per objective.")
-    val routes: List<WaypointRoute> = emptyList(),
-
-    @Help("Entity targets and glow.")
+    @Help("Entity target rendering options. Targets are configured with entity_waypoint entries.")
     val integrations: WynncraftIntegrationConfig = WynncraftIntegrationConfig(),
 
 ) : AudienceEntry, PlaceholderEntry {
@@ -234,6 +229,7 @@ private data class WynncraftMarkerPair(
     val label: TextDisplay,
     val icon: TextDisplay,
     val beam: WynncraftBeamPair?,
+    val styleId: String?,
     val acquisitionStartTick: Long? = null,
     var snapped: Boolean = false,
     var seeThrough: Boolean = false,
@@ -310,17 +306,17 @@ private class WynncraftWaypointDisplay(
     }
 
     private fun resolveTargets(player: Player, state: WynncraftPlayerState): List<WaypointTarget> {
-        val raw = resolveWaypointTargets(
+        val routes = WaypointTargetRegistry.routesFor(player.uniqueId)
+        val raw = WaypointTargetRegistry.resolve(
             player = player,
             selection = entry.general.selection,
             maxTargets = entry.general.maxTargets.coerceIn(0, 16),
-            entityTargets = entry.integrations.entityTargets,
             includeObjectives = true,
             includeEntities = true,
         )
         val activeObjectiveIds = raw.mapNotNullTo(mutableSetOf()) { it.objective?.id }
         (state.activeRouteObjectives - activeObjectiveIds).forEach { objectiveId ->
-            entry.routes.asSequence()
+            routes.asSequence()
                 .filter { it.objectiveId == objectiveId && it.resetOnObjectiveChange }
                 .forEach { route ->
                     val effectiveRouteId = route.routeId.ifBlank { objectiveId }
@@ -331,10 +327,10 @@ private class WynncraftWaypointDisplay(
         }
         state.activeRouteObjectives.clear()
         state.activeRouteObjectives.addAll(activeObjectiveIds)
-        if (entry.routes.isEmpty()) return raw
+        if (routes.isEmpty()) return raw
         return raw.map { target ->
             val objectiveId = target.objective?.id ?: return@map target
-            applyRouteAdvancing(player, objectiveId, entry.routes, target)
+            applyRouteAdvancing(player, objectiveId, routes, target)
         }
     }
 
@@ -363,6 +359,7 @@ private class WynncraftWaypointDisplay(
 
         visible.forEachIndexed { index, target ->
             val key = target.zoneKey()
+            val style = target.style
             val arrived = entry.general.arriveRadius > 0.0 &&
                 target.distance <= entry.general.arriveRadius
             val labelVisible = target.distance > entry.label.hideRange.coerceAtLeast(0.0) &&
@@ -409,10 +406,18 @@ private class WynncraftWaypointDisplay(
             val iconOffset = baseIconOffset
             val textScale = labelScale(target.distance)
             val labelComponent = if (labelVisible)
-                markerComponent(entry.label.text.get(player), player, target, index, visible.size)
+                markerComponent(
+                    if (style?.label?.overrideText == true) style.label.text.get(player)
+                    else entry.label.text.get(player),
+                    player, target, index, visible.size,
+                )
             else Component.empty()
             val iconComponent = if (symbolVisible)
-                markerComponent(entry.symbol.text.get(player), player, target, index, visible.size)
+                markerComponent(
+                    if (style?.symbol?.overrideText == true) style.symbol.text.get(player)
+                    else entry.symbol.text.get(player),
+                    player, target, index, visible.size,
+                )
             else Component.empty()
             val refreshVisibility = force || marker == null ||
                 state.tick - marker.lastVisibilityCheckTick >= WAYPOINT_VISIBILITY_CHECK_INTERVAL
@@ -436,12 +441,14 @@ private class WynncraftWaypointDisplay(
             val live = if (marker == null ||
                 !marker.label.isValid || !marker.icon.isValid ||
                 !beamStateIsValid(marker.beam) ||
+                marker.styleId != style?.id ||
                 marker.label.world != targetLoc.world
             ) {
                 marker?.let { removeMarker(player, it) }
                 spawnMarker(
                     player, targetLoc, beamPointer, textScale, iconScale, iconOffset,
                     beamVisible, seeThrough,
+                    style = style,
                     acquisition = symbolVisible && key in newlyTrackedKeys,
                     currentTick = state.tick,
                 )
@@ -473,7 +480,7 @@ private class WynncraftWaypointDisplay(
 
             if (beamVisible) {
                 live.beam?.let { beam ->
-                    updateBeam(player, beam, beamPointer, target.distance, state.tick)
+                    updateBeam(player, beam, beamPointer, target.distance, state.tick, style)
                     if (!player.canSee(beam.outer)) player.showEntity(plugin, beam.outer)
                     if (!player.canSee(beam.inner)) player.showEntity(plugin, beam.inner)
                 }
@@ -537,12 +544,13 @@ private class WynncraftWaypointDisplay(
         iconOffset: Double,
         beamVisible: Boolean,
         seeThrough: Boolean,
+        style: WaypointThemeSnapshot?,
         acquisition: Boolean,
         currentTick: Long,
     ): WynncraftMarkerPair {
         // Spawn the beam first so the text entities are inserted later on the client.
         // The physical camera-facing offset remains the primary anti-intersection rule.
-        val beam = if (entry.beam.enabled) spawnBeam(player, beamPointer, beamVisible) else null
+        val beam = if (entry.beam.enabled) spawnBeam(player, beamPointer, beamVisible, style) else null
         val billboard = Display.Billboard.VERTICAL
         val label = location.world!!.spawn(location, TextDisplay::class.java) {
             it.isPersistent = false
@@ -553,7 +561,7 @@ private class WynncraftWaypointDisplay(
             it.textOpacity = shaderOpacity()
             it.isDefaultBackground = false
             it.backgroundColor = Color.fromARGB(0, 0, 0, 0)
-            it.isShadowed = entry.label.shadow
+            it.isShadowed = if (style?.label?.overrideShadow == true) style.label.shadow else entry.label.shadow
             it.lineWidth = entry.label.lineWidth.coerceAtLeast(1)
             it.alignment = TextDisplay.TextAlignment.CENTER
             it.teleportDuration = V3_DISPLAY_INTERPOLATION_TICKS
@@ -571,7 +579,7 @@ private class WynncraftWaypointDisplay(
             it.textOpacity = shaderOpacity()
             it.isDefaultBackground = false
             it.backgroundColor = Color.fromARGB(0, 0, 0, 0)
-            it.isShadowed = entry.symbol.shadow
+            it.isShadowed = if (style?.symbol?.overrideShadow == true) style.symbol.shadow else entry.symbol.shadow
             it.lineWidth = 1000
             it.alignment = TextDisplay.TextAlignment.CENTER
             it.interpolationDuration = V3_DISPLAY_INTERPOLATION_TICKS
@@ -590,6 +598,7 @@ private class WynncraftWaypointDisplay(
             label = label,
             icon = icon,
             beam = beam,
+            styleId = style?.id,
             acquisitionStartTick = if (acquisition) currentTick else null,
             seeThrough = seeThrough,
         )
@@ -811,23 +820,30 @@ private class WynncraftWaypointDisplay(
     private fun beamStateIsValid(beam: WynncraftBeamPair?): Boolean =
         if (entry.beam.enabled) beam != null && beam.outer.isValid && beam.inner.isValid else beam == null
 
-    private fun spawnBeam(player: Player, pointer: Location, visible: Boolean): WynncraftBeamPair {
+    private fun spawnBeam(
+        player: Player,
+        pointer: Location,
+        visible: Boolean,
+        style: WaypointThemeSnapshot?,
+    ): WynncraftBeamPair {
         val geometry = beamGeometry(player, pointer)
         val outer = spawnBeamLayer(
             geometry.first,
-            safeBeamMaterial(entry.beam.outer, Material.LIME_STAINED_GLASS),
+            safeBeamMaterial(effectiveBeamOuter(style), Material.LIME_STAINED_GLASS),
             entry.beam.width,
             entry.beam.depth,
             geometry.second,
             0.0,
+            effectiveBeamFullBright(style),
         )
         val inner = spawnBeamLayer(
             geometry.first,
-            safeBeamMaterial(entry.beam.inner, Material.LIME_CONCRETE),
+            safeBeamMaterial(effectiveBeamInner(style), Material.LIME_CONCRETE),
             entry.beam.coreWidth,
             entry.beam.coreDepth,
             geometry.second,
             0.0,
+            effectiveBeamFullBright(style),
         )
         if (visible) {
             player.showEntity(plugin, outer)
@@ -843,6 +859,7 @@ private class WynncraftWaypointDisplay(
         rawDepth: Float,
         height: Float,
         angleRadians: Double,
+        fullBright: Boolean,
     ): BlockDisplay {
         val width = rawWidth.coerceAtLeast(0.01f)
         val depth = rawDepth.coerceAtLeast(0.01f)
@@ -850,7 +867,7 @@ private class WynncraftWaypointDisplay(
             it.isPersistent = false
             it.isVisibleByDefault = false
             it.block = material.createBlockData()
-            it.brightness = if (entry.beam.fullBright) Display.Brightness(15, 15) else null
+            it.brightness = if (fullBright) Display.Brightness(15, 15) else null
             it.teleportDuration = DISPLAY_INTERPOLATION_TICKS
             it.interpolationDuration = DISPLAY_INTERPOLATION_TICKS
             it.displayWidth = maxOf(width, depth) * 2.0f
@@ -868,6 +885,7 @@ private class WynncraftWaypointDisplay(
         pointer: Location,
         distance: Double,
         tick: Long,
+        style: WaypointThemeSnapshot?,
     ) {
         val (location, height) = beamGeometry(player, pointer)
         val fade = beamFadeFactor(distance)
@@ -880,10 +898,22 @@ private class WynncraftWaypointDisplay(
             beam.inner, location,
             entry.beam.coreWidth * fade, entry.beam.coreDepth * fade,
             height,
-            if (entry.beam.rotateInner) Math.toRadians(tick * BEAM_ROTATION_DEGREES_PER_TICK) else 0.0,
-            entry.beam.rotateInner,
+            if (effectiveBeamRotation(style)) Math.toRadians(tick * BEAM_ROTATION_DEGREES_PER_TICK) else 0.0,
+            effectiveBeamRotation(style),
         )
     }
+
+    private fun effectiveBeamOuter(style: WaypointThemeSnapshot?): Material =
+        if (style?.beam?.overrideMaterials == true) style.beam.outer else entry.beam.outer
+
+    private fun effectiveBeamInner(style: WaypointThemeSnapshot?): Material =
+        if (style?.beam?.overrideMaterials == true) style.beam.inner else entry.beam.inner
+
+    private fun effectiveBeamRotation(style: WaypointThemeSnapshot?): Boolean =
+        if (style?.beam?.overrideRotation == true) style.beam.rotateInner else entry.beam.rotateInner
+
+    private fun effectiveBeamFullBright(style: WaypointThemeSnapshot?): Boolean =
+        if (style?.beam?.overrideFullBright == true) style.beam.fullBright else entry.beam.fullBright
 
     private fun updateBeamLayer(
         display: BlockDisplay,

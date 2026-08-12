@@ -19,7 +19,7 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * Which targets the BetterHUD bridge syncs.
  * - OBJECTIVES_ONLY  — tracked quest location objectives only.
- * - ENTITIES_ONLY    — entityTargets list only (Bukkit entities + Typewriter NPCs).
+ * - ENTITIES_ONLY    — active entity_waypoint entries only.
  * - ANY_ACTIVE_TARGET — both combined.
  */
 enum class BetterHudTargetMode {
@@ -56,12 +56,6 @@ class WaypointBetterHudBridgeEntry(
 
     @Help("Hide the compass point when closer than this distance. 0 = always show.")
     val arriveRadius: Double = 0.0,
-
-    @Help("Entity/NPC targets to include. Requires ANY_ACTIVE_TARGET or ENTITIES_ONLY mode.")
-    val entityTargets: List<EntityWaypointTarget> = emptyList(),
-
-    @Help("Route config to show route point positions instead of the final objective.")
-    val routes: List<WaypointRoute> = emptyList(),
 
 ) : AudienceEntry {
     override suspend fun display(): AudienceDisplay = WaypointBetterHudBridgeDisplay(this)
@@ -235,18 +229,18 @@ private class WaypointBetterHudBridgeDisplay(
     // --- Target resolution ---
 
     private fun resolveTargets(player: Player): List<WaypointTarget> {
-        val raw = resolveWaypointTargets(
+        val routes = WaypointTargetRegistry.routesFor(player.uniqueId)
+        val raw = WaypointTargetRegistry.resolve(
             player = player,
             selection = entry.selection,
             maxTargets = entry.maxTargets,
-            entityTargets = entry.entityTargets,
             includeObjectives = entry.targetMode != BetterHudTargetMode.ENTITIES_ONLY,
             includeEntities = entry.targetMode != BetterHudTargetMode.OBJECTIVES_ONLY,
         )
-        if (entry.routes.isEmpty()) return raw
+        if (routes.isEmpty()) return raw
         return raw.map { target ->
             val objectiveId = target.objective?.id ?: return@map target
-            applyRouteReadOnly(player, objectiveId, entry.routes, target)
+            applyRouteReadOnly(player, objectiveId, routes, target)
         }
     }
 

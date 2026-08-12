@@ -1,6 +1,6 @@
 # Test Setup (headpop)
 
-This page records the environment and visual values used to validate WaypointRPGExtension V4.
+This page records the environment and visual values used to validate WaypointRPGExtension v3.0.3.
 
 ## Server
 
@@ -16,7 +16,7 @@ This page records the environment and visual values used to validate WaypointRPG
 
 ## Reference waypoint values
 
-These values come from the tested server page and are used throughout this V4 documentation:
+These values come from the tested server page and are used throughout this v3.0.3 documentation:
 
 | Section | Tested values |
 |---|---|
@@ -27,7 +27,7 @@ These values come from the tested server page and are used throughout this V4 do
 | Beam clearance | `1.0` |
 | Bob | height `0.4`, speed `0.6` |
 
-The server page still contains several historical JSON properties from earlier schemas. They are not included in the V4 examples because the current panel no longer exposes or uses them.
+The server page still contains several historical JSON properties from earlier schemas. They are not included in the v3.0.3 examples because the current panel no longer exposes or uses them.
 
 ## Test checklist
 

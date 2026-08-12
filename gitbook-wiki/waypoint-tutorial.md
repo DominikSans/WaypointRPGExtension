@@ -1,9 +1,9 @@
 # Waypoint tutorial
 
-This page creates a `static_waypoint` using the tested headpop server values as a V4 starting point.
+This page creates the global `static_waypoint` using the tested headpop server values as a v3.0.3 starting point.
 
 {% hint style="info" %}
-The server preset was cleaned for V4. Historical fields that remain in old page JSON are intentionally excluded.
+The v3.0.3 preset uses direct Quest profiles and removes local `routes` and `entityTargets` arrays.
 {% endhint %}
 
 {% stepper %}
@@ -11,19 +11,31 @@ The server preset was cleaned for V4. Historical fields that remain in old page 
 
 ## Create the entry
 
-Create a Typewriter locatable objective. In the same audience, create **Waypoint**:
+Create one **Waypoint** under a global `world_audience`:
 
 ```text
 static_waypoint
 ```
 
-A common layout is:
+A recommended layout is:
 
 ```text
+world_audience
+└── static_waypoint
+
 tracked_quest_audience
 ├── location_objective
-└── static_waypoint
+├── quest_waypoint
+├── waypoint_path (only with checkpoints)
+├── waypoint_theme (only for CUSTOM)
+└── entity_waypoint (optional)
 ```
+
+The global renderer automatically finds every tracked locatable objective and every
+active target entry for that player. Do not duplicate it for each quest.
+
+In `quest_waypoint`, select the same Quest referenced by the location objective and
+choose a simple color preset. The objective inherits it automatically.
 
 {% endstep %}
 
@@ -132,7 +144,7 @@ The first time a target is tracked, the configured symbol image automatically pe
 
 The inner core rotates while the outer layer remains fixed. `labelClearance` keeps the beam physically behind label and symbol.
 
-Beam height and update cadence are controlled internally. V4 does not expose the old dynamic or follow controls.
+Beam height and update cadence are controlled internally. v3.0.3 does not expose the old dynamic or follow controls.
 
 {% endstep %}
 
@@ -230,13 +242,13 @@ Restart after replacing the extension. Track the quest, sprint toward the object
     "height": 0.4,
     "speed": 0.6
   },
-  "routes": [],
   "integrations": {
     "entityGlow": false,
-    "entityTargets": [],
     "glowRange": 20.0
   }
 }
 ```
 
-Use [Entry list](entry-list.md) for every field, [Integrations](integrations.md) for routes and companion entries, and [Placeholders](placeholders.md) for text and custom glyphs.
+Create routes and entity targets as separate entries as shown in
+[Routes and entity targets](integrations.md). Use [Entry list](entry-list.md) for every
+field and [Placeholders](placeholders.md) for text and custom glyphs.

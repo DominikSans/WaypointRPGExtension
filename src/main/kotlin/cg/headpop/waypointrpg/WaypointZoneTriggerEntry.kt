@@ -26,9 +26,9 @@ import java.util.concurrent.ConcurrentHashMap
  * Which targets the zone trigger monitors.
  *
  * - OBJECTIVES_ONLY    — only location objectives (fastest).
- * - ANY_ACTIVE_TARGET  — objectives + entity targets from [entityTargets] list.
+ * - ANY_ACTIVE_TARGET  — objectives + active entity_waypoint entries.
  * - ACTIVE_ROUTE_POINT — triggers at the current route point instead of the final objective position.
- *                        Requires [routes] to be configured with matching objectiveId.
+ *                        Requires an active waypoint_path for the objective.
  *                        Route index advances only when the visual static_waypoint entry is present.
  */
 enum class ZoneTriggerTargetMode {
@@ -68,12 +68,6 @@ class WaypointZoneTriggerEntry(
 
     @Help("Reset triggerOnce when the player exits the zone.")
     val resetOnExit: Boolean = true,
-
-    @Help("Entity targets to monitor. Requires ANY_ACTIVE_TARGET mode.")
-    val entityTargets: List<EntityWaypointTarget> = emptyList(),
-
-    @Help("Route config for ACTIVE_ROUTE_POINT mode. Match routeId to the visual entry.")
-    val routes: List<WaypointRoute> = emptyList(),
 
     @Help("Trigger on zone entry.")
     val onEnter: Ref<TriggerableEntry> = emptyRef(),
@@ -127,18 +121,18 @@ private class WaypointZoneTriggerDisplay(
     // --- Target resolution ---
 
     private fun resolveZoneTargets(player: Player): List<WaypointTarget> {
-        val raw = resolveWaypointTargets(
+        val routes = WaypointTargetRegistry.routesFor(player.uniqueId)
+        val raw = WaypointTargetRegistry.resolve(
             player = player,
             selection = entry.selection,
             maxTargets = entry.maxTargets,
-            entityTargets = entry.entityTargets,
             includeObjectives = true,
             includeEntities = entry.targetMode == ZoneTriggerTargetMode.ANY_ACTIVE_TARGET,
         )
-        if (entry.targetMode != ZoneTriggerTargetMode.ACTIVE_ROUTE_POINT || entry.routes.isEmpty()) return raw
+        if (entry.targetMode != ZoneTriggerTargetMode.ACTIVE_ROUTE_POINT || routes.isEmpty()) return raw
         return raw.map { target ->
             val objectiveId = target.objective?.id ?: return@map target
-            applyRouteReadOnly(player, objectiveId, entry.routes, target)
+            applyRouteReadOnly(player, objectiveId, routes, target)
         }
     }
 

@@ -1,6 +1,6 @@
 # Preset (red village)
 
-This V4 preset updates the published Red Village example to use `static_waypoint` and the tested visual values from the headpop server.
+This v3.0.3 preset uses one global `static_waypoint`, a Quest profile, and an optional path.
 
 ## Page example
 
@@ -11,11 +11,15 @@ This V4 preset updates the published Red Village example to use `static_waypoint
 ## Recommended layout
 
 ```text
-tracked_quest_audience
-├── location_objective
+world_audience
 ├── static_waypoint
 ├── waypoint_zone_trigger
 └── waypoint_betterhud_bridge (optional)
+
+tracked_quest_audience
+├── location_objective
+├── quest_waypoint: PURPLE
+└── waypoint_path
 ```
 
 ## Waypoint preset
@@ -79,46 +83,67 @@ tracked_quest_audience
     "height": 0.4,
     "speed": 0.6
   },
-  "routes": [
-    {
-      "objectiveId": "your_red_village_objective_id",
-      "routeId": "",
-      "allowSkip": true,
-      "resetOnObjectiveChange": true,
-      "resetOnComplete": false,
-      "points": [
-        {
-          "name": "point1",
-          "position": {
-            "world": "world",
-            "x": 29.02,
-            "y": 71.0,
-            "z": 106.94,
-            "yaw": 0.0,
-            "pitch": 0.0
-          },
-          "radius": 3.0
-        },
-        {
-          "name": "point2",
-          "position": {
-            "world": "world",
-            "x": 35.01,
-            "y": 70.0,
-            "z": 65.61,
-            "yaw": 0.0,
-            "pitch": 0.0
-          },
-          "radius": 3.0
-        }
-      ]
-    }
-  ],
   "integrations": {
     "entityGlow": false,
-    "entityTargets": [],
     "glowRange": 20.0
   }
+}
+```
+
+## Quest profile
+
+```json
+{
+  "type": "quest_waypoint",
+  "id": "red_village_waypoint",
+  "name": "Red Village Waypoint",
+  "quest": "your_red_village_quest_id",
+  "preset": "PURPLE",
+  "customTheme": ""
+}
+```
+
+## Path preset
+
+Select the Red Village location objective from the `objective` picker in the panel.
+The path automatically inherits the purple Quest profile.
+
+```json
+{
+  "type": "waypoint_path",
+  "id": "route_red_village",
+  "name": "Red Village Route",
+  "objective": "your_red_village_objective_id",
+  "priority": 10,
+  "allowSkip": true,
+  "resetOnObjectiveChange": true,
+  "resetOnComplete": false,
+  "points": [
+    {
+      "name": "point1",
+      "position": {
+        "world": "world",
+        "x": 29.02,
+        "y": 71.0,
+        "z": 106.94,
+        "yaw": 0.0,
+        "pitch": 0.0
+      },
+      "radius": 3.0
+    },
+    {
+      "name": "point2",
+      "position": {
+        "world": "world",
+        "x": 35.01,
+        "y": 70.0,
+        "z": 65.61,
+        "yaw": 0.0,
+        "pitch": 0.0
+      },
+      "radius": 3.0
+    }
+  ]
 }
 ```
 
@@ -138,8 +163,6 @@ Replace the objective ID and coordinates with your own page values. The coordina
   "triggerPerTarget": false,
   "triggerOnce": true,
   "resetOnExit": true,
-  "entityTargets": [],
-  "routes": [],
   "onEnter": "on_enter_red_village",
   "onExit": "on_exit_red_village"
 }

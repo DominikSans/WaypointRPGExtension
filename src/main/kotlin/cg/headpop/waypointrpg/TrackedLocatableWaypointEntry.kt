@@ -287,6 +287,8 @@ data class WaypointRoute(
     val objectiveId: String = "",
     @Help("Shared key to sync progress across entries. Blank uses objectiveId.")
     val routeId: String = "",
+    @Help("Higher priority wins when several routes target the same objective.")
+    val priority: Int = 0,
     @Help("Allow advancing by passing any point, not just the current one.")
     val allowSkip: Boolean = true,
     @Help("Reset progress when the objective deactivates.")
@@ -315,6 +317,10 @@ data class EntityWaypointTarget(
     val priority: Int = 0,
     @Help("Typewriter NPC entry ID. Required when type = TYPEWRITER_NPC.")
     val npcEntryId: String = "",
+    /** Stable source identity supplied by entity_waypoint. */
+    val registryId: String = "",
+    val questId: String? = null,
+    val themeOverride: WaypointThemeSnapshot? = null,
 )
 
 data class WaypointRoutePoint(
@@ -2621,6 +2627,8 @@ internal data class WaypointTarget(
     val entityPriority: Int = 0,
     val entityTypeName: String? = null,
     val sourceId: String? = null,
+    val questId: String? = null,
+    val style: WaypointThemeSnapshot? = null,
 ) {
     // Slot-key memo — targets live in cachedObjectiveTargets for several ticks and the
     // display calls key() multiple times per tick (stale sweep, slot lookup, distinctBy);
@@ -2637,8 +2645,9 @@ internal fun applyRouteReadOnly(
     routes: List<WaypointRoute>,
     directTarget: WaypointTarget,
 ): WaypointTarget {
-    val route = routes.firstOrNull { it.objectiveId == objectiveId && it.points.isNotEmpty() }
+    val route = routes.firstOrNull { it.objectiveId == objectiveId }
         ?: return directTarget
+    if (route.points.isEmpty()) return directTarget
     val effectiveRouteId = route.routeId.ifBlank { objectiveId }
     val key = routeStateKey(player.uniqueId, objectiveId, effectiveRouteId)
     val index = globalRouteIndices.getOrDefault(key, 0)
@@ -2648,7 +2657,8 @@ internal fun applyRouteReadOnly(
         val location = runCatching { position.toBukkitLocation() }.getOrNull() ?: return@mapIndexedNotNull null
         Triple(idx, point, Pair(position, location))
     }
-    val nextPoint = resolvedPoints.firstOrNull { it.first >= index } ?: return directTarget
+    val nextPoint = resolvedPoints.firstOrNull { it.first >= index }
+        ?: return directTarget
     val (pos, loc) = nextPoint.third
     val dist = if (loc.world == player.location.world) player.location.distance(loc) else Double.POSITIVE_INFINITY
     val pointName = runCatching { nextPoint.second.name.get(player) }.getOrNull().orEmpty()
@@ -2660,6 +2670,8 @@ internal fun applyRouteReadOnly(
         routePointIndex = nextPoint.first,
         routePointCount = resolvedPoints.size,
         routePointName = pointName,
+        questId = directTarget.questId,
+        style = directTarget.style,
     )
 }
 
@@ -2671,8 +2683,9 @@ internal fun applyRouteAdvancing(
     directTarget: WaypointTarget,
 ): WaypointTarget {
     if (directTarget.entityUUID != null) return directTarget
-    val route = routes.firstOrNull { it.objectiveId == objectiveId && it.points.isNotEmpty() }
+    val route = routes.firstOrNull { it.objectiveId == objectiveId }
         ?: return directTarget
+    if (route.points.isEmpty()) return directTarget
     val resolved = route.points.mapIndexedNotNull { index, point ->
         val position = runCatching { point.position.get(player) }.getOrNull()
             ?: return@mapIndexedNotNull null
@@ -2722,6 +2735,8 @@ internal fun applyRouteAdvancing(
         routePointIndex = next.first,
         routePointCount = resolved.size,
         routePointName = runCatching { next.second.name.get(player) }.getOrNull().orEmpty(),
+        questId = directTarget.questId,
+        style = directTarget.style,
     )
 }
 
@@ -2785,10 +2800,12 @@ private fun resolveEntityTarget(
         // Selector-based targets carry a stable sourceId: when NAME/SCOREBOARD_TAG matches
         // a different entity (old one died, a closer one appeared), the slot key stays the
         // same — the display glides to the new entity instead of destroy + respawn.
-        sourceId = when (et.targetType) {
+        sourceId = et.registryId.takeIf { it.isNotBlank() }?.let { "entry:$it" } ?: when (et.targetType) {
             EntityTargetType.NAME, EntityTargetType.SCOREBOARD_TAG -> "sel:" + buildEntitySelectorCacheKey(et)
             else -> null
         },
+        questId = et.questId,
+        style = et.themeOverride,
     )
 }
 
@@ -2886,7 +2903,7 @@ internal fun resolveTypewriterNpcTarget(et: EntityWaypointTarget, player: Player
         val rawLoc: Location? = if (display != null && display.isSpawnedIn(player.uniqueId)) {
             display.position(player.uniqueId)?.toBukkitLocation()
         } else {
-            Query.findById<com.typewritermc.entity.entries.entity.custom.NpcInstance>(et.npcEntryId)
+            Query.findById<com.typewritermc.engine.paper.entry.entity.SimpleEntityInstance>(et.npcEntryId)
                 ?.spawnLocation?.toBukkitLocation()
         }
         val location = rawLoc ?: return@runCatching null
@@ -2894,7 +2911,7 @@ internal fun resolveTypewriterNpcTarget(et: EntityWaypointTarget, player: Player
 
         val dist = player.location.distance(location)
         val label = et.displayName.get(player).ifBlank {
-            Query.findById<com.typewritermc.entity.entries.entity.custom.NpcInstance>(et.npcEntryId)?.name ?: et.npcEntryId
+            Query.findById<com.typewritermc.engine.paper.entry.entity.SimpleEntityInstance>(et.npcEntryId)?.name ?: et.npcEntryId
         }
         WaypointTarget(
             objective = null, position = null, location = location,
@@ -2902,7 +2919,10 @@ internal fun resolveTypewriterNpcTarget(et: EntityWaypointTarget, player: Player
             entityUUID = null,
             entityPriority = et.priority,
             entityTypeName = "NPC",
-            sourceId = "npc:${et.npcEntryId}",
+            sourceId = et.registryId.takeIf { it.isNotBlank() }?.let { "entry:$it" }
+                ?: "npc:${et.npcEntryId}",
+            questId = et.questId,
+            style = et.themeOverride,
         )
     }.getOrNull()
 }

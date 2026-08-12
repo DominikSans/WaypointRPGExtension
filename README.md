@@ -16,7 +16,8 @@ A [Typewriter](https://github.com/gabber235/Typewriter) extension that displays 
 
 1. Drop the JAR matching your Typewriter beta into `plugins/Typewriter/extensions/`.
 2. Restart the server.
-3. The `static_waypoint` visual entry and its two auxiliary integration entries are available in the Typewriter panel.
+3. Seven entries are available in the Typewriter panel, including the simple
+   `quest_waypoint` profile and its optional advanced `waypoint_theme`.
 
 ### Core shader resource pack (Minecraft 1.21.11)
 
@@ -57,8 +58,8 @@ route or objective rotation data cannot leave them inclined.
 Renders a private two-layer `BlockDisplay` beam plus a Bukkit `TextDisplay` label
 and symbol anchored to the objective. The marker is displaced toward the camera
 past the beam radius so the column cannot intersect the text. It also supports
-distance scaling, snapping, smooth bob motion, advancing routes, rotating beam,
-entity glow, entity targets, and optional BetterHUD integration. A newly tracked
+distance scaling, snapping, smooth bob motion, registered routes, rotating beam,
+entity glow, registered entity targets, and optional BetterHUD integration. A newly tracked
 target also receives a hardcoded Wynncraft-style acquisition effect: the symbol itself
 performs a progressive three-stage focus lock (`1.90x` -> `1.55x` -> `1.25x` -> `1.00x`) over 11 ticks (0.55 seconds at 20 TPS). Each stage continues inward, with one-tick holds between stages, so the motion never bounces outward. The configured image is animated directly on its stable V3 display and finishes at the exact normal scale, avoiding entity handoff or texture-frame changes.
 
@@ -66,6 +67,31 @@ performs a progressive three-stage focus lock (`1.90x` -> `1.55x` -> `1.25x` -> 
 
 ### `waypoint_zone_trigger`
 Fires entry/exit triggers when a player enters or leaves a waypoint's detection radius. Supports objective targets, entity targets, and the active route point.
+
+### `quest_waypoint`
+Connects a selectable Quest directly to `INHERIT`, `PURPLE`, `GREEN`, `RED`, `GOLD`,
+`BLUE`, or `CUSTOM`. All location objectives belonging to that quest inherit the
+appearance automatically. Its only configuration fields are `quest`, `preset`, and
+optional `customTheme`; `CUSTOM` selects an advanced `waypoint_theme`.
+
+### `waypoint_path`
+Defines an ordered path for one location objective. `objective` is a filtered entry
+selector in the Typewriter panel, not a manually copied ID. Create one route entry per
+objective and add/reorder its points there. If several active routes select the same
+objective, the path with the highest `priority` wins. Appearance comes from the
+objective's Quest profile, so this entry is only needed for actual checkpoints.
+
+### `waypoint_theme`
+Defines reusable beam materials, rotation/full-bright overrides, label text/shadow, and
+symbol text/shadow. It is selected from `quest_waypoint.customTheme` only for advanced
+`CUSTOM` profiles, or as an entity-specific override.
+
+### `entity_waypoint`
+Registers one entity target while its Typewriter audience is active. This lets a quest,
+criterion, world audience, or any other parent decide exactly which players see it.
+`TYPEWRITER_NPC` provides a filtered selector for any shared Typewriter entity instance;
+Bukkit entities can instead be resolved by UUID, name, or scoreboard tag. Selecting its
+optional Quest inherits `quest_waypoint`; `themeOverride` handles exceptional entities.
 
 ### `waypoint_betterhud_bridge`
 Syncs the active waypoint targets to a [BetterHUD](https://github.com/toxicity188/BetterHud) compass element. Requires BetterHUD installed on the server.
@@ -132,14 +158,17 @@ Syncs the active waypoint targets to a [BetterHUD](https://github.com/toxicity18
     "height": 0.06,
     "speed": 1.2
   },
-  "routes": [],
   "integrations": {
     "entityGlow": false,
-    "entityTargets": [],
     "glowRange": 20.0
   }
 }
 ```
+
+Use one global `static_waypoint`, normally under `world_audience`. It automatically
+renders all tracked locatable objectives plus the active `waypoint_path` and
+`entity_waypoint` entries for each player. You no longer need to duplicate the
+renderer for every quest page.
 
 The stable V3 movement is preserved: label and symbol stay anchored to the
 waypoint inside 70 blocks and transition to a camera-range anchor from 70 to
