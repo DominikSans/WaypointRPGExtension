@@ -1,6 +1,6 @@
 # WaypointRPGExtension
 
-A [Typewriter](https://typewritermc.com) extension that displays personal waypoints for each player's active quest objectives. `static_waypoint` is the single supported visual renderer.
+A [Typewriter](https://typewritermc.com](https://github.com/gabber235/Typewriter) extension that displays personal waypoints for each player's active quest objectives. `static_waypoint` is the single supported visual renderer.
 
 ## Requirements
 
