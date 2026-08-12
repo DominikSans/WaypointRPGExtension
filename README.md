@@ -58,7 +58,9 @@ Renders a private two-layer `BlockDisplay` beam plus a Bukkit `TextDisplay` labe
 and symbol anchored to the objective. The marker is displaced toward the camera
 past the beam radius so the column cannot intersect the text. It also supports
 distance scaling, snapping, smooth bob motion, advancing routes, rotating beam,
-entity glow, entity targets, and optional BetterHUD integration.
+entity glow, entity targets, and optional BetterHUD integration. A newly tracked
+target also receives a hardcoded Wynncraft-style acquisition effect: the symbol itself
+performs a progressive three-stage focus lock (`1.90x` -> `1.55x` -> `1.25x` -> `1.00x`) over 11 ticks (0.55 seconds at 20 TPS). Each stage continues inward, with one-tick holds between stages, so the motion never bounces outward. The configured image is animated directly on its stable V3 display and finishes at the exact normal scale, avoiding entity handoff or texture-frame changes.
 
 **Placeholders** (via PAPI or Typewriter): `%typewriter_<id>:direction:up%`, `:north%`, `:northeast%`, `:east%`, `:southeast%`, `:south%`, `:southwest%`, `:west%`, `:northwest%`, `:down%`
 

@@ -19,7 +19,9 @@ out vec2 texCoord0;
 flat out float waypointRpgText;
 
 const float WAYPOINT_RPG_OPACITY = 252.0 / 255.0;
-const float BYTE_TOLERANCE = 0.5 / 255.0;
+// Vanilla/Sodium may quantize TextDisplay opacity by one byte while building
+// text vertices. Accept 251..253 for the 252 marker, while still excluding 255.
+const float BYTE_TOLERANCE = 1.5 / 255.0;
 const float WAYPOINT_FRONT_PLANE = -0.9999;
 
 const float SRPG_FOV = 100.0;

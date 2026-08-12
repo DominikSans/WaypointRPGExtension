@@ -58,6 +58,10 @@ Their billboard mode is hardcoded to `VERTICAL` with centered text alignment and
 | `snapHeight` | Number | `3.0` | Height of the snapped symbol. |
 | `scaleSpacing` | Number | `0.16` | Extra vertical spacing based on symbol scale. |
 
+When a target becomes newly tracked, the configured symbol image performs a progressive three-stage focus lock (`1.90x` -> `1.55x` -> `1.25x` -> `1.00x`) over 11 ticks (0.55 seconds at 20 TPS). Each stage continues inward and pauses for one tick before the next one, so it reads as an acquisition effect instead of a bounce. The same stable V3 display is used from beginning to end, avoiding entity handoff and texture-frame changes. Normal updates, bob movement, and visibility changes do not restart it.
+
+A separate white focus-marker layer was evaluated but is intentionally not rendered. It remains a possible future visual option if a dedicated texture is added instead of using a text glyph.
+
 ### `beam`
 
 | Field | Type | Default | Description |

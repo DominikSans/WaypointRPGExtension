@@ -44,6 +44,12 @@ private const val WAYPOINT_SEE_THROUGH = true
 private const val WAYPOINT_SHADER_FIX = true
 private const val WAYPOINT_SMART_SEE_THROUGH = true
 private const val WAYPOINT_VISIBILITY_CHECK_INTERVAL = 4L
+private const val WAYPOINT_SEE_THROUGH_DEBUG = true
+private const val WAYPOINT_SEE_THROUGH_DEBUG_INTERVAL = 20L
+private const val ACQUISITION_TOTAL_TICKS = 11L
+private const val ACQUISITION_START_SCALE = 1.90f
+private const val ACQUISITION_FIRST_LOCK_SCALE = 1.55f
+private const val ACQUISITION_SECOND_LOCK_SCALE = 1.25f
 private const val BEAM_ROTATION_DEGREES_PER_TICK = 2.25
 private const val ENTITY_GLOW_CHECK_INTERVAL = 5L
 private const val AUTOMATIC_LANE_SPACING = 0.35
@@ -228,11 +234,27 @@ private data class WynncraftMarkerPair(
     val label: TextDisplay,
     val icon: TextDisplay,
     val beam: WynncraftBeamPair?,
+    val acquisitionStartTick: Long? = null,
     var snapped: Boolean = false,
     var seeThrough: Boolean = false,
     var lastVisibilityCheckTick: Long = Long.MIN_VALUE,
+    var lastSeeThroughDebugTick: Long = Long.MIN_VALUE,
     var glowEntityId: Int = -1,
     var glowBaseFlags: Byte = 0,
+)
+
+private data class WaypointOcclusionHit(
+    val sample: String,
+    val samplePosition: Location,
+    val blockDescription: String,
+    val hitPosition: Location?,
+    val remainingDistance: Double?,
+)
+
+private data class WaypointOcclusionResult(
+    val occluded: Boolean,
+    val testedSamples: Int,
+    val hit: WaypointOcclusionHit? = null,
 )
 
 private data class WynncraftBeamPair(
@@ -326,7 +348,11 @@ private class WynncraftWaypointDisplay(
             target.location.world == player.world
         }
         val keys = visible.mapTo(HashSet<String>()) { it.zoneKey() }
-        val newlyTracked = visible.firstOrNull { it.zoneKey() !in state.trackedTargetKeys }
+        val newlyTrackedKeys = visible.asSequence()
+            .map { it.zoneKey() }
+            .filter { it !in state.trackedTargetKeys }
+            .toSet()
+        val newlyTracked = visible.firstOrNull { it.zoneKey() in newlyTrackedKeys }
         state.trackedTargetKeys.retainAll(keys)
         state.trackedTargetKeys.addAll(keys)
         newlyTracked?.let { faceTargetYaw(player, it.location) }
@@ -390,16 +416,21 @@ private class WynncraftWaypointDisplay(
             else Component.empty()
             val refreshVisibility = force || marker == null ||
                 state.tick - marker.lastVisibilityCheckTick >= WAYPOINT_VISIBILITY_CHECK_INTERVAL
-            val seeThrough = when {
-                !WAYPOINT_SEE_THROUGH -> false
-                !WAYPOINT_SMART_SEE_THROUGH -> true
-                refreshVisibility -> isMarkerOccludedByBlocks(
+            val occlusionResult = when {
+                !WAYPOINT_SEE_THROUGH || !WAYPOINT_SMART_SEE_THROUGH -> null
+                refreshVisibility -> inspectMarkerOcclusion(
                     player.eyeLocation,
                     stableTargetLoc,
                     labelComponent,
                     iconComponent,
                     iconOffset,
                 )
+                else -> null
+            }
+            val seeThrough = when {
+                !WAYPOINT_SEE_THROUGH -> false
+                !WAYPOINT_SMART_SEE_THROUGH -> true
+                occlusionResult != null -> occlusionResult.occluded
                 else -> marker?.seeThrough ?: false
             }
             val live = if (marker == null ||
@@ -411,15 +442,33 @@ private class WynncraftWaypointDisplay(
                 spawnMarker(
                     player, targetLoc, beamPointer, textScale, iconScale, iconOffset,
                     beamVisible, seeThrough,
+                    acquisition = symbolVisible && key in newlyTrackedKeys,
+                    currentTick = state.tick,
                 )
                     .also { state.markers[key] = it }
             } else marker
             live.snapped = snapped
+            val seeThroughChanged = live.seeThrough != seeThrough
             if (refreshVisibility || live.seeThrough != seeThrough) {
                 live.seeThrough = seeThrough
                 live.lastVisibilityCheckTick = state.tick
             }
             applyWaypointTextDepth(live, live.seeThrough)
+            if (WAYPOINT_SEE_THROUGH_DEBUG && occlusionResult != null &&
+                (marker == null || seeThroughChanged ||
+                    state.tick - live.lastSeeThroughDebugTick >= WAYPOINT_SEE_THROUGH_DEBUG_INTERVAL)
+            ) {
+                logSeeThroughDebug(
+                    player = player,
+                    target = target,
+                    stableAnchor = stableTargetLoc,
+                    renderedAnchor = targetLoc,
+                    iconOffset = iconOffset,
+                    result = occlusionResult,
+                    marker = live,
+                    tick = state.tick,
+                )
+            }
             updateEntityGlow(player, live, target, state.tick, force || marker == null)
 
             if (beamVisible) {
@@ -438,6 +487,13 @@ private class WynncraftWaypointDisplay(
             if (force || live.label.text() != labelComponent) live.label.text(labelComponent)
             if (force || live.icon.text() != iconComponent) live.icon.text(iconComponent)
 
+            val acquisitionIconScale = acquisitionScaleForTick(
+                live,
+                state.tick,
+                iconScale,
+                symbolVisible,
+            )
+
             val labelTransform = live.label.transformation
             if (kotlin.math.abs(labelTransform.scale.x - textScale) > 0.001f) {
                 labelTransform.scale.set(textScale, textScale, textScale)
@@ -446,13 +502,14 @@ private class WynncraftWaypointDisplay(
                 live.label.transformation = labelTransform
             }
             val iconTransform = live.icon.transformation
-            if (kotlin.math.abs(iconTransform.scale.x - iconScale) > 0.001f ||
+            if (kotlin.math.abs(iconTransform.scale.x - acquisitionIconScale) > 0.001f ||
                 kotlin.math.abs(iconTransform.translation.y - iconOffset.toFloat()) > 0.001f
             ) {
                 iconTransform.translation.set(0f, iconOffset.toFloat(), 0f)
-                iconTransform.scale.set(iconScale, iconScale, iconScale)
+                iconTransform.scale.set(acquisitionIconScale, acquisitionIconScale, acquisitionIconScale)
                 live.icon.interpolationDelay = 0
-                live.icon.interpolationDuration = V3_DISPLAY_INTERPOLATION_TICKS
+                live.icon.interpolationDuration =
+                    if (isAcquisitionActive(live, state.tick)) 1 else V3_DISPLAY_INTERPOLATION_TICKS
                 live.icon.transformation = iconTransform
             }
             if (live.label.location.distanceSquared(targetLoc) > 0.0025) {
@@ -480,6 +537,8 @@ private class WynncraftWaypointDisplay(
         iconOffset: Double,
         beamVisible: Boolean,
         seeThrough: Boolean,
+        acquisition: Boolean,
+        currentTick: Long,
     ): WynncraftMarkerPair {
         // Spawn the beam first so the text entities are inserted later on the client.
         // The physical camera-facing offset remains the primary anti-intersection rule.
@@ -517,14 +576,23 @@ private class WynncraftWaypointDisplay(
             it.alignment = TextDisplay.TextAlignment.CENTER
             it.interpolationDuration = V3_DISPLAY_INTERPOLATION_TICKS
             it.transformation = it.transformation.apply {
+                val initialScale = if (acquisition) {
+                    iconScale * ACQUISITION_START_SCALE
+                } else iconScale
                 translation.set(0f, iconOffset.toFloat(), 0f)
-                scale.set(iconScale, iconScale, iconScale)
+                scale.set(initialScale, initialScale, initialScale)
             }
         }
         label.addPassenger(icon)
         player.showEntity(plugin, label)
         player.showEntity(plugin, icon)
-        return WynncraftMarkerPair(label, icon, beam, seeThrough = seeThrough)
+        return WynncraftMarkerPair(
+            label = label,
+            icon = icon,
+            beam = beam,
+            acquisitionStartTick = if (acquisition) currentTick else null,
+            seeThrough = seeThrough,
+        )
     }
 
     private fun applyWaypointTextDepth(marker: WynncraftMarkerPair, seeThrough: Boolean) {
@@ -534,6 +602,47 @@ private class WynncraftWaypointDisplay(
         applyTextDepthMode(marker.label, seeThrough)
         applyTextDepthMode(marker.icon, seeThrough)
     }
+
+    private fun acquisitionScaleForTick(
+        marker: WynncraftMarkerPair,
+        currentTick: Long,
+        baseIconScale: Float,
+        symbolVisible: Boolean,
+    ): Float {
+        val startTick = marker.acquisitionStartTick ?: return baseIconScale
+        val age = (currentTick - startTick).coerceAtLeast(0L)
+        if (!symbolVisible || age >= ACQUISITION_TOTAL_TICKS) return baseIconScale
+
+        // A one-way focus lock: every stage continues inward from the previous
+        // scale. The short holds make each acquisition step readable without
+        // resetting the symbol outward and creating a bounce effect.
+        val iconFactor = when (age) {
+            in 0L..2L -> acquisitionScale(age, 0L, 2L, ACQUISITION_START_SCALE, ACQUISITION_FIRST_LOCK_SCALE)
+            3L -> ACQUISITION_FIRST_LOCK_SCALE
+            in 4L..6L -> acquisitionScale(age, 4L, 6L, ACQUISITION_FIRST_LOCK_SCALE, ACQUISITION_SECOND_LOCK_SCALE)
+            7L -> ACQUISITION_SECOND_LOCK_SCALE
+            else -> acquisitionScale(age, 8L, 10L, ACQUISITION_SECOND_LOCK_SCALE, 1.0f)
+        }
+        return baseIconScale * iconFactor
+    }
+
+    private fun acquisitionScale(
+        tick: Long,
+        startTick: Long,
+        endTick: Long,
+        startScale: Float,
+        endScale: Float,
+    ): Float {
+        val progress = ((tick - startTick).toDouble() / (endTick - startTick).toDouble())
+            .coerceIn(0.0, 1.0)
+        val eased = 1.0 - (1.0 - progress) * (1.0 - progress) * (1.0 - progress)
+        return startScale + (endScale - startScale) * eased.toFloat()
+    }
+
+    private fun isAcquisitionActive(marker: WynncraftMarkerPair, currentTick: Long): Boolean =
+        marker.acquisitionStartTick?.let { start ->
+            currentTick - start < ACQUISITION_TOTAL_TICKS
+        } == true
 
     private fun updateEntityGlow(
         player: Player,
@@ -602,38 +711,93 @@ private class WynncraftWaypointDisplay(
     private fun traceOcclusion(
         from: Location,
         to: Location,
-    ): Boolean {
-        if (from.world == null || from.world != to.world) return false
+        sample: String,
+    ): WaypointOcclusionHit? {
+        if (from.world == null || from.world != to.world) return null
         val delta = to.toVector().subtract(from.toVector())
         val distance = delta.length()
-        if (distance <= 0.2) return false
+        if (distance <= 0.2) return null
         val traceDistance = (distance - 0.15).coerceAtLeast(0.01)
-        return from.world!!.rayTraceBlocks(
+        val trace = from.world!!.rayTraceBlocks(
             from,
             delta.multiply(1.0 / distance),
             traceDistance,
             FluidCollisionMode.NEVER,
             true,
-        ) != null
+        ) ?: return null
+        val block = trace.hitBlock
+        val hitPosition = trace.hitPosition?.let { vector ->
+            Location(from.world, vector.x, vector.y, vector.z)
+        }
+        return WaypointOcclusionHit(
+            sample = sample,
+            samplePosition = to.clone(),
+            blockDescription = block?.let {
+                "${it.type.name}@${it.x},${it.y},${it.z}"
+            } ?: "unknown",
+            hitPosition = hitPosition,
+            remainingDistance = hitPosition?.distance(to),
+        )
     }
 
-    private fun isMarkerOccludedByBlocks(
+    private fun inspectMarkerOcclusion(
         from: Location,
         stableAnchor: Location,
         label: Component,
         icon: Component,
         iconOffset: Double,
-    ): Boolean {
-        val samples = ArrayList<Location>(2)
+    ): WaypointOcclusionResult {
+        val samples = ArrayList<Pair<String, Location>>(2)
 
         if (label != Component.empty()) {
-            samples += stableAnchor.clone()
+            samples += "label" to stableAnchor.clone()
         }
         if (icon != Component.empty()) {
-            samples += stableAnchor.clone().add(0.0, iconOffset, 0.0)
+            samples += "symbol" to stableAnchor.clone().add(0.0, iconOffset, 0.0)
         }
-        return samples.any { sample -> traceOcclusion(from, sample) }
+        samples.forEachIndexed { index, (name, position) ->
+            val hit = traceOcclusion(from, position, name)
+            if (hit != null) {
+                return WaypointOcclusionResult(true, index + 1, hit)
+            }
+        }
+        return WaypointOcclusionResult(false, samples.size)
     }
+
+    private fun logSeeThroughDebug(
+        player: Player,
+        target: WaypointTarget,
+        stableAnchor: Location,
+        renderedAnchor: Location,
+        iconOffset: Double,
+        result: WaypointOcclusionResult,
+        marker: WynncraftMarkerPair,
+        tick: Long,
+    ) {
+        marker.lastSeeThroughDebugTick = tick
+        val hit = result.hit
+        val hitPosition = hit?.hitPosition
+        val labelOpacity = marker.label.textOpacity.toInt() and 0xff
+        val symbolOpacity = marker.icon.textOpacity.toInt() and 0xff
+        Bukkit.getLogger().info(
+            "[Typewriter] [WaypointRPG][SeeThroughDebug] " +
+                "player=${player.name} target=${target.zoneKey()} " +
+                "occluded=${result.occluded} applied=${marker.seeThrough} " +
+                "sample=${hit?.sample ?: "none"} tested=${result.testedSamples} " +
+                "eye=${formatDebugLocation(player.eyeLocation)} " +
+                "stable=${formatDebugLocation(stableAnchor)} " +
+                "rendered=${formatDebugLocation(renderedAnchor)} " +
+                "symbolPos=${formatDebugLocation(stableAnchor.clone().add(0.0, iconOffset, 0.0))} " +
+                "hit=${hit?.blockDescription ?: "none"} " +
+                "hitPos=${hitPosition?.let(::formatDebugLocation) ?: "none"} " +
+                "remaining=${hit?.remainingDistance?.let { "%.3f".format(it) } ?: "n/a"} " +
+                "labelFlag=${marker.label.isSeeThrough} symbolFlag=${marker.icon.isSeeThrough} " +
+                "labelOpacity=$labelOpacity symbolOpacity=$symbolOpacity"
+        )
+    }
+
+    private fun formatDebugLocation(location: Location): String =
+        "(%.3f,%.3f,%.3f)".format(location.x, location.y, location.z)
 
     private fun shaderOpacity(): Byte {
         val configured = entry.label.opacity.coerceIn(0, 255)

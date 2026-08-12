@@ -103,6 +103,8 @@ The glyph `佚` is the server reference and requires the `images_rpg:emojis` fon
 
 `symbol.shadow` is independent from `label.shadow`. Keep `snapLeave` greater than `snapRange`.
 
+The first time a target is tracked, the configured symbol image automatically performs a progressive three-stage focus lock over 11 ticks (0.55 seconds at 20 TPS): `1.90x` -> `1.55x` -> `1.25x` -> `1.00x`. The scale only moves inward and pauses for one tick between stages, avoiding any rebound. The same stable V3 display is used throughout and finishes at its exact normal scale, avoiding entity handoff or texture-frame changes. This behavior is internal and requires no additional panel fields. An animated CraftEngine image such as `<image:waypoints:quest_tracked>` can still be used as `symbol.text`; its texture animation and the one-shot acquisition effect are independent. A separate white focus-marker layer is reserved as a possible future option and is not currently rendered.
+
 {% endstep %}
 
 {% step %}
