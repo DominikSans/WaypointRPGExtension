@@ -1,6 +1,6 @@
 # Routes V2 — Reference
 
-> **Versión:** `v0.6.0-dev`  
+> **Versión:** `v0.6.0-dev`
 > **Descripción:** Referencia histórica del sistema de rutas, ahora escrito por `static_waypoint` y leído por `waypoint_zone_trigger` y `waypoint_betterhud_bridge`.
 > **Modificado:** jueves, 3 de julio de 2026 (America/Lima).
 

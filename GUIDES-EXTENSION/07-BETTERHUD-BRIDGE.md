@@ -1,7 +1,7 @@
 # waypoint_betterhud_bridge — V2 Reference
 
-> **Versión:** `v0.7.0-dev`  
-> **Descripción:** Referencia completa del entry `waypoint_betterhud_bridge` V2.  
+> **Versión:** `v0.7.0-dev`
+> **Descripción:** Referencia completa del entry `waypoint_betterhud_bridge` V2.
 > **Modificado:** domingo, 5 de julio de 2026, 18:30 `(-05:00)` (America/Lima).
 
 ## Qué hace
