@@ -29,7 +29,7 @@ import java.util.concurrent.ConcurrentHashMap
  * - ANY_ACTIVE_TARGET  — objectives + active entity_waypoint entries.
  * - ACTIVE_ROUTE_POINT — triggers at the current route point instead of the final objective position.
  *                        Requires an active waypoint_path for the objective.
- *                        Route index advances only when the visual static_waypoint entry is present.
+ *                        Progress is shared and advances without requiring static_waypoint.
  */
 enum class ZoneTriggerTargetMode {
     OBJECTIVES_ONLY,
@@ -121,19 +121,14 @@ private class WaypointZoneTriggerDisplay(
     // --- Target resolution ---
 
     private fun resolveZoneTargets(player: Player): List<WaypointTarget> {
-        val routes = WaypointTargetRegistry.routesFor(player.uniqueId)
-        val raw = WaypointTargetRegistry.resolve(
+        return WaypointTargetRegistry.resolve(
             player = player,
             selection = entry.selection,
             maxTargets = entry.maxTargets,
             includeObjectives = true,
             includeEntities = entry.targetMode == ZoneTriggerTargetMode.ANY_ACTIVE_TARGET,
+            includePaths = entry.targetMode == ZoneTriggerTargetMode.ACTIVE_ROUTE_POINT,
         )
-        if (entry.targetMode != ZoneTriggerTargetMode.ACTIVE_ROUTE_POINT || routes.isEmpty()) return raw
-        return raw.map { target ->
-            val objectiveId = target.objective?.id ?: return@map target
-            applyRouteReadOnly(player, objectiveId, routes, target)
-        }
     }
 
     // --- Zone check ---

@@ -33,9 +33,10 @@ void main() {
 
     mat4 projection = GameTime < 0.0 ? srpg_force_fov(ProjMat) : ProjMat;
     gl_Position = projection * ModelViewMat * vec4(Position, 1.0);
-    if (waypointRpgText > 0.5) {
-        gl_Position.z = WAYPOINT_FRONT_PLANE * gl_Position.w;
-    }
+    // Every vertex in this render type already belongs to Minecraft's explicit
+    // see-through text pass. Protect the complete quad, including shadow vertices
+    // whose alpha is reduced and therefore cannot retain the 252 marker byte.
+    gl_Position.z = WAYPOINT_FRONT_PLANE * gl_Position.w;
 
     // Minecraft 1.21.11's see-through text format has no UV2/lightmap input.
     vertexColor = Color;

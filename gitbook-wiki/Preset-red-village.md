@@ -1,6 +1,7 @@
-# Preset (red village)
+# Preset (Red Village)
 
-This v3.0.3 preset uses one global `static_waypoint`, a Quest profile, and an optional path.
+This v3.1.0 preset reproduces the current visual values from page `8qAYWA1k0zFJn27`
+and combines them with the new Quest profile workflow.
 
 ## Page example
 
@@ -22,6 +23,19 @@ tracked_quest_audience
 └── waypoint_path
 ```
 
+## Source objective
+
+The server page identifies the Quest as **Aldea Roja** and its active location objective
+as **Ve a la aldea morada**:
+
+| Value | Source page value |
+|---|---|
+| Quest entry | `jGOxxXwmghSTI8d` (`simple_quest_2`) |
+| Objective entry | `4NfG2H5raB9D9SD` (`loc_morado`) |
+| Target | `world: 3.51, 72, 50.69` |
+| Objective criterion | fact `DDuBUGrXtKEYpWN == 3` |
+| Quest completion | fact `DDuBUGrXtKEYpWN >= 4` |
+
 ## Waypoint preset
 
 ```json
@@ -30,23 +44,24 @@ tracked_quest_audience
   "id": "waypoint_red_village",
   "name": "Red Village Waypoint",
   "general": {
-    "hideOnArrive": true,
+    "hideOnArrive": false,
     "selection": "HIGHEST_PRIORITY",
     "maxTargets": 5,
-    "arriveRadius": 1.5
+    "arriveRadius": 1.2
   },
   "target": {
     "offset": 0.0
   },
   "label": {
     "shadow": true,
-    "text": "<white>{name}</white><newline>{distance}<newline><white>{direction}</white>",
+    "text": "{distance}<newline><white>{direction}</white>",
     "height": 1.0,
+    "floatDist": 5.0,
     "hideRange": 8.0,
-    "minScale": 2.0,
+    "minScale": 1.0,
     "maxScale": 8.0,
-    "nearDist": 18.0,
-    "farDist": 45.0,
+    "nearDist": 5.0,
+    "farDist": 59.0,
     "opacity": 255,
     "lineWidth": 200
   },
@@ -62,30 +77,26 @@ tracked_quest_audience
     "snapRange": 8.0,
     "snapLeave": 12.0,
     "snapHeight": 3.0,
-    "scaleSpacing": 0.25
+    "scaleSpacing": 0.15
   },
   "beam": {
     "enabled": true,
     "fullBright": true,
     "rotateInner": true,
-    "outer": "PURPLE_STAINED_GLASS",
-    "inner": "PURPLE_CONCRETE_POWDER",
-    "width": 0.3,
-    "depth": 0.3,
-    "coreWidth": 0.15,
-    "coreDepth": 0.15,
+    "outer": "STONE",
+    "inner": "STONE",
+    "width": 0.25,
+    "depth": 0.25,
+    "coreWidth": 0.1,
+    "coreDepth": 0.1,
     "height": 150.0,
     "depthBelow": 5.0,
     "labelClearance": 1.0
   },
   "bob": {
-    "enabled": true,
+    "enabled": false,
     "height": 0.4,
-    "speed": 0.6
-  },
-  "integrations": {
-    "entityGlow": false,
-    "glowRange": 20.0
+    "speed": 0.4
   }
 }
 ```
@@ -97,7 +108,7 @@ tracked_quest_audience
   "type": "quest_waypoint",
   "id": "red_village_waypoint",
   "name": "Red Village Waypoint",
-  "quest": "your_red_village_quest_id",
+  "quest": "jGOxxXwmghSTI8d",
   "preset": "PURPLE",
   "customTheme": ""
 }
@@ -105,19 +116,18 @@ tracked_quest_audience
 
 ## Path preset
 
-Select the Red Village location objective from the `objective` picker in the panel.
-The path automatically inherits the purple Quest profile.
+The source page does not currently define intermediate path points. The following
+section is optional: select `4NfG2H5raB9D9SD` from the `objective` picker and replace
+the example checkpoints with the route you want players to follow. The path
+automatically inherits the purple Quest profile.
 
 ```json
 {
   "type": "waypoint_path",
   "id": "route_red_village",
   "name": "Red Village Route",
-  "objective": "your_red_village_objective_id",
-  "priority": 10,
-  "allowSkip": true,
-  "resetOnObjectiveChange": true,
-  "resetOnComplete": false,
+  "objective": "4NfG2H5raB9D9SD",
+  "loop": false,
   "points": [
     {
       "name": "point1",
@@ -147,7 +157,8 @@ The path automatically inherits the purple Quest profile.
 }
 ```
 
-Replace the objective ID and coordinates with your own page values. The coordinates shown reproduce the two-point pattern used by the test server.
+The checkpoint coordinates above are illustrative and are not stored in the source
+page. The final objective remains `world: 3.51, 72, 50.69`.
 
 ## Optional zone trigger
 

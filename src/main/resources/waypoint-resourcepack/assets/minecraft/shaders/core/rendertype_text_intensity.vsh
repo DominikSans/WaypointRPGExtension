@@ -22,7 +22,7 @@ const float WAYPOINT_RPG_OPACITY = 252.0 / 255.0;
 // Vanilla/Sodium may quantize TextDisplay opacity by one byte while building
 // text vertices. Accept 251..253 for the 252 marker, while still excluding 255.
 const float BYTE_TOLERANCE = 1.5 / 255.0;
-const float WAYPOINT_FRONT_PLANE = -0.9999;
+const float WAYPOINT_DEPTH_BIAS = 0.0002;
 
 const float SRPG_FOV = 100.0;
 const float SRPG_INV_TAN_HALF_FOV = 1.0 / tan(radians(SRPG_FOV * 0.5));
@@ -42,7 +42,7 @@ void main() {
     mat4 projection = GameTime < 0.0 ? srpg_force_fov(ProjMat) : ProjMat;
     gl_Position = projection * ModelViewMat * vec4(Position, 1.0);
     if (waypointRpgText > 0.5) {
-        gl_Position.z = WAYPOINT_FRONT_PLANE * gl_Position.w;
+        gl_Position.z -= WAYPOINT_DEPTH_BIAS * gl_Position.w;
     }
 
     sphericalVertexDistance = fog_spherical_distance(Position);

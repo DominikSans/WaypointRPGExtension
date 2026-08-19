@@ -38,7 +38,7 @@ class WaypointBetterHudBridgeEntry(
     override val id: String = "",
     override val name: String = "",
 
-    @Help("BetterHUD compass element name to update.")
+    @Help("Fallback BetterHUD custom-icon ID. A target theme's betterHudIcon takes precedence.")
     val iconName: String = "default",
 
     @Help("Prefix for compass point IDs. The entry ID is appended automatically.")
@@ -65,6 +65,7 @@ class WaypointBetterHudBridgeEntry(
 private data class PlayerHudState(
     val activeIds: MutableSet<String> = mutableSetOf(),
     val knownPositions: MutableMap<String, Triple<Double, Double, Double>> = mutableMapOf(),
+    val knownIcons: MutableMap<String, String> = mutableMapOf(),
 )
 
 // Sync cadence is internal policy — not user-editable. 5 ticks = 0.25 s, responsive
@@ -229,19 +230,13 @@ private class WaypointBetterHudBridgeDisplay(
     // --- Target resolution ---
 
     private fun resolveTargets(player: Player): List<WaypointTarget> {
-        val routes = WaypointTargetRegistry.routesFor(player.uniqueId)
-        val raw = WaypointTargetRegistry.resolve(
+        return WaypointTargetRegistry.resolve(
             player = player,
             selection = entry.selection,
             maxTargets = entry.maxTargets,
             includeObjectives = entry.targetMode != BetterHudTargetMode.ENTITIES_ONLY,
             includeEntities = entry.targetMode != BetterHudTargetMode.OBJECTIVES_ONLY,
         )
-        if (routes.isEmpty()) return raw
-        return raw.map { target ->
-            val objectiveId = target.objective?.id ?: return@map target
-            applyRouteReadOnly(player, objectiveId, routes, target)
-        }
     }
 
     // Stable point ID: prefix + entry.id + target.zoneKey().
@@ -283,6 +278,7 @@ private class WaypointBetterHudBridgeDisplay(
             pointers.removeIf { BetterHudAccess.pointName(it) == id }
             state.activeIds.remove(id)
             state.knownPositions.remove(id)
+            state.knownIcons.remove(id)
             changed = true
         }
 
@@ -299,17 +295,20 @@ private class WaypointBetterHudBridgeDisplay(
                 dx * dx + dy * dy + dz * dz > 0.25
             } ?: true
             val isNew = id !in state.activeIds
+            val icon = target.style?.betterHudIcon?.takeIf { it.isNotBlank() } ?: entry.iconName
+            val iconChanged = state.knownIcons[id] != icon
 
-            if (isNew || posChanged) {
+            if (isNew || posChanged || iconChanged) {
                 if (!isNew) {
                     // Position changed — remove old before re-adding
                     pointers.removeIf { BetterHudAccess.pointName(it) == id }
                 }
                 BetterHudAccess.createPoint(
-                    id, entry.iconName, worldName, loc.x, loc.y, loc.z
+                    id, icon, worldName, loc.x, loc.y, loc.z
                 )?.let(pointers::add) ?: continue
                 state.activeIds.add(id)
                 state.knownPositions[id] = newPos
+                state.knownIcons[id] = icon
                 changed = true
             }
         }
@@ -334,6 +333,7 @@ private class WaypointBetterHudBridgeDisplay(
         }
         state.activeIds.clear()
         state.knownPositions.clear()
+        state.knownIcons.clear()
     }
 
     override fun dispose() {

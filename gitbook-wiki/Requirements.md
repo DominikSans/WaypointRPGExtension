@@ -5,6 +5,8 @@
 | Paper / Purpur | Yes | Minecraft `1.21.11` tested |
 | Java | Yes | `21+` |
 | Typewriter | Yes | `0.9.0-beta-173`, beta-174, or beta-175 |
+| Typewriter Quest extension | Yes | Supplies Quest and locatable objective entries |
+| Typewriter Entity extension | Yes | Supplies selectable shared NPC instances |
 | Matching extension build | Yes | Use the JAR compiled for the installed Typewriter beta |
 | PacketEvents | Yes | Supplied by or compatible with the Typewriter setup |
 | BetterHUD | No | Only for `waypoint_betterhud_bridge` |
@@ -31,7 +33,11 @@ plugins/WaypointRPGExtension/resourcepack/
     ├── rendertype_text.vsh
     ├── rendertype_text.fsh
     ├── rendertype_text_intensity.vsh
-    └── rendertype_text_intensity.fsh
+    ├── rendertype_text_intensity.fsh
+    ├── rendertype_text_see_through.vsh
+    ├── rendertype_text_see_through.fsh
+    ├── rendertype_text_intensity_see_through.vsh
+    └── rendertype_text_intensity_see_through.fsh
 ```
 
 The shader folder is required for the protected through-wall appearance. WaypointRPGExtension creates the folder but does not distribute the final resource pack.
@@ -45,8 +51,15 @@ resource-pack:
     - "WaypointRPGExtension/resourcepack"
 ```
 
-Generate and resend the CraftEngine pack only after Typewriter has created or refreshed the folder. Verify that the resulting ZIP contains all four shader files.
+Generate and resend the CraftEngine pack only after Typewriter has created or refreshed
+the folder. Verify that the resulting ZIP contains all eight files for the four shader
+programs. The normal programs keep depth testing; only the confirmed see-through pass
+uses protected front depth.
 
 ## Client requirements
 
 Players do not need Fabric, Forge, Wynntils, BetterHUD, or another client mod. They only need to accept the server resource pack when custom glyphs or the waypoint shaders are used.
+
+Animated symbol textures are also client-side resource-pack assets. The waypoint remains
+a `TextDisplay`; v3.1.0 does not create `ItemDisplay` symbols or expose CustomModelData
+fields.

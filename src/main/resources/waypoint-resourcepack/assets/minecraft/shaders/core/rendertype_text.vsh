@@ -22,7 +22,7 @@ const float WAYPOINT_RPG_OPACITY = 252.0 / 255.0;
 // Vanilla/Sodium may quantize TextDisplay opacity by one byte while building
 // text vertices. Accept 251..253 for the 252 marker, while still excluding 255.
 const float BYTE_TOLERANCE = 1.5 / 255.0;
-const float WAYPOINT_FRONT_PLANE = -0.9999;
+const float WAYPOINT_DEPTH_BIAS = 0.0002;
 
 // Preserve ScreenRPG's menu FOV branch when this shader is merged after it.
 const float SRPG_FOV = 100.0;
@@ -43,9 +43,9 @@ void main() {
     mat4 projection = GameTime < 0.0 ? srpg_force_fov(ProjMat) : ProjMat;
     gl_Position = projection * ModelViewMat * vec4(Position, 1.0);
     if (waypointRpgText > 0.5) {
-        // Regular text has depth test + depth write. Moving the marked waypoint
-        // to the near plane makes it pass walls and protects it from later beam draws.
-        gl_Position.z = WAYPOINT_FRONT_PLANE * gl_Position.w;
+        // The regular pass keeps vanilla depth testing. A very small camera-side
+        // bias only prevents z-fighting with the beam at the same waypoint.
+        gl_Position.z -= WAYPOINT_DEPTH_BIAS * gl_Position.w;
     }
 
     sphericalVertexDistance = fog_spherical_distance(Position);

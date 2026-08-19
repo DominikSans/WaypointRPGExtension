@@ -44,10 +44,14 @@ The extension does not edit CraftEngine. Add
 The shaders preserve Mojang's behavior for ordinary text and ScreenRPG's menu-FOV
 branch. `static_waypoint` marks only its label and symbol with opacity byte `252`.
 See-through, shader correction, and smart occlusion are hardcoded. Every four ticks,
-the renderer switches label and symbol to the protected see-through pass only when a
-block obstructs them; a clear view keeps the regular depth-writing pass. Occlusion is
-sampled at stable, non-bobbing centers for label and symbol. This avoids scaled edge
-rays descending into distant terrain when the player views the waypoint near ground level.
+the renderer evaluates label and symbol independently. Label uses center, side, top,
+and bottom samples; symbol uses center and side samples. Opaque blocks are conclusive,
+while leaves, doors, and other partial shapes use weighted coverage and short
+hysteresis before changing passes. Glass, stained glass, tinted glass, and their panes
+are transparent to the occlusion rays; the ray continues so a solid wall behind glass
+is still detected. Small edge contacts therefore do not flash the whole
+waypoint. A clear view keeps the regular depth-tested pass; only confirmed obstruction
+uses the protected see-through pass. Samples use stable, non-bobbing anchors.
 Label and symbol use a hardcoded `VERTICAL` billboard with centered text alignment.
 They follow camera yaw laterally, and their entity pitch is normalized to `0°` so
 route or objective rotation data cannot leave them inclined.
@@ -77,13 +81,13 @@ optional `customTheme`; `CUSTOM` selects an advanced `waypoint_theme`.
 ### `waypoint_path`
 Defines an ordered path for one location objective. `objective` is a filtered entry
 selector in the Typewriter panel, not a manually copied ID. Create one route entry per
-objective and add/reorder its points there. If several active routes select the same
-objective, the path with the highest `priority` wins. Appearance comes from the
+objective and add/reorder its points there. The panel exposes only `objective`, `loop`,
+and `points`; skip-ahead and progress reset are safe internal behavior. Appearance comes from the
 objective's Quest profile, so this entry is only needed for actual checkpoints.
 
 ### `waypoint_theme`
-Defines reusable beam materials, rotation/full-bright overrides, label text/shadow, and
-symbol text/shadow. It is selected from `quest_waypoint.customTheme` only for advanced
+Defines reusable beam materials, rotation/full-bright overrides, label text/shadow,
+symbol text/shadow, and a BetterHUD custom-icon ID. It is selected from `quest_waypoint.customTheme` only for advanced
 `CUSTOM` profiles, or as an entity-specific override.
 
 ### `entity_waypoint`
@@ -92,6 +96,7 @@ criterion, world audience, or any other parent decide exactly which players see 
 `TYPEWRITER_NPC` provides a filtered selector for any shared Typewriter entity instance;
 Bukkit entities can instead be resolved by UUID, name, or scoreboard tag. Selecting its
 optional Quest inherits `quest_waypoint`; `themeOverride` handles exceptional entities.
+Private glow is configured here and supports both Bukkit entities and packet-only Typewriter NPCs.
 
 ### `waypoint_betterhud_bridge`
 Syncs the active waypoint targets to a [BetterHUD](https://github.com/toxicity188/BetterHud) compass element. Requires BetterHUD installed on the server.
@@ -157,10 +162,6 @@ Syncs the active waypoint targets to a [BetterHUD](https://github.com/toxicity18
     "enabled": true,
     "height": 0.06,
     "speed": 1.2
-  },
-  "integrations": {
-    "entityGlow": false,
-    "glowRange": 20.0
   }
 }
 ```
@@ -199,7 +200,7 @@ Defaults are written automatically on first use if the keys are missing.
 
 ## BetterHUD Integration
 
-Add a `waypoint_betterhud_bridge` entry and set `iconName` to the compass element defined in your BetterHUD layout. The bridge syncs positions every 0.25 s. BetterHUD is optional; if absent, the bridge disables itself without blocking the extension.
+Add a `waypoint_betterhud_bridge` entry and set `iconName` to the fallback `custom-icon` ID defined in your BetterHUD compass. A target theme's `betterHudIcon` takes precedence. The bridge syncs positions every 0.25 s. BetterHUD is optional; if absent, the bridge disables itself without blocking the extension.
 
 ## Known Limitations
 

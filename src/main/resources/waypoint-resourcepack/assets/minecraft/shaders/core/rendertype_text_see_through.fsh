@@ -11,14 +11,16 @@ flat in float waypointRpgText;
 out vec4 fragColor;
 
 void main() {
-    vec4 color = texture(Sampler0, texCoord0) * vertexColor;
+    vec4 color = texture(Sampler0, texCoord0) * vertexColor * ColorModulator;
     if (color.a < 0.1) {
         discard;
     }
 
+    // Depth must be identical for the main glyph and its shadow. The alpha marker
+    // is still used only to restore full opacity on WaypointRPG's main text layer.
+    gl_FragDepth = 0.00005;
     if (waypointRpgText > 0.5) {
         color.a = 1.0;
-        gl_FragDepth = 0.00005;
     }
-    fragColor = color * ColorModulator;
+    fragColor = color;
 }

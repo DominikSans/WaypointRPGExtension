@@ -33,9 +33,9 @@ void main() {
 
     mat4 projection = GameTime < 0.0 ? srpg_force_fov(ProjMat) : ProjMat;
     gl_Position = projection * ModelViewMat * vec4(Position, 1.0);
-    if (waypointRpgText > 0.5) {
-        gl_Position.z = WAYPOINT_FRONT_PLANE * gl_Position.w;
-    }
+    // Keep glyphs, multi-line quads, and their lower-alpha shadow vertices on
+    // the same protected plane once Minecraft selects the see-through pass.
+    gl_Position.z = WAYPOINT_FRONT_PLANE * gl_Position.w;
 
     // Minecraft 1.21.11's see-through text format has no UV2/lightmap input.
     vertexColor = Color;

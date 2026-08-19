@@ -1,6 +1,6 @@
 # How to Start
 
-WaypointRPGExtension v3.0.3 adds personal RPG-style waypoint visuals to Typewriter quests. Players do not need a client mod.
+WaypointRPGExtension v3.1.0 adds personal RPG-style waypoint visuals to Typewriter quests. Players do not need a client mod.
 
 ## What it can show
 
@@ -16,21 +16,21 @@ WaypointRPGExtension v3.0.3 adds personal RPG-style waypoint visuals to Typewrit
 
 ## First setup path
 
-1. Check [Requirements](requirements.md).
+1. Check [Requirements](Requirements.md).
 2. Select the extension JAR matching your Typewriter beta.
 3. Place it in `plugins/Typewriter/extensions/` and restart the server.
-4. Follow [Waypoint tutorial](waypoint-tutorial.md).
-5. Review every field in [Entry list](entry-list.md).
-6. Add zones, entities, routes, or BetterHUD using [Integrations](integrations.md).
-7. Configure arrows and custom glyphs using [Placeholders](placeholders.md).
+4. Follow [Waypoint Tutorial](Waypoint-tutorial.md).
+5. Review every field in [Entry List](Entry-list.md).
+6. Add zones, entities, routes, or BetterHUD using [Integrations](Integrations.md).
+7. Configure arrows and custom glyphs using [Placeholders](Placeholders.md).
 
 ## Entries included
 
 | Entry | Use it for |
 |---|---|
-| `static_waypoint` | One global renderer for label, symbol, beam, and entity glow. It appears as **Waypoint** in the panel. |
+| `static_waypoint` | One global renderer for label, symbol, and beam. It appears as **Waypoint** in the panel. |
 | `quest_waypoint` | Selects a Quest and gives all its objectives a simple preset or custom theme. |
-| `waypoint_theme` | Advanced reusable beam, label, and symbol appearance. |
+| `waypoint_theme` | Advanced reusable beam, label, text-based symbol, and BetterHUD icon appearance. |
 | `waypoint_path` | Selects a location objective and defines only its ordered checkpoints. |
 | `entity_waypoint` | Registers one Bukkit entity or selectable Typewriter entity for its active audience. |
 | `waypoint_zone_trigger` | Fires Typewriter triggers when a player enters or leaves a target area. |
@@ -50,4 +50,6 @@ When the extension loads, it creates:
 plugins/WaypointRPGExtension/resourcepack/
 ```
 
-Merge that folder into the resource pack sent to players. It contains the four core shaders used to keep label and symbol readable through walls. CraftEngine can merge it as an external resource-pack folder.
+Merge that folder into the resource pack sent to players. It contains four core shader
+programs represented by eight `.vsh` and `.fsh` files. CraftEngine can merge it as an
+external resource-pack folder.

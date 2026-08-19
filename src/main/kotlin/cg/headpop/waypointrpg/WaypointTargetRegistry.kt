@@ -82,6 +82,9 @@ class WaypointThemeEntry(
 
     @Help("Symbol appearance overrides.")
     val symbol: WaypointStyleSymbolConfig = WaypointStyleSymbolConfig(),
+
+    @Help("BetterHUD custom-icon ID inherited by targets using this theme. Blank uses the bridge fallback.")
+    val betterHudIcon: String = "",
 ) : ManifestEntry
 
 data class WaypointThemeSnapshot(
@@ -89,12 +92,13 @@ data class WaypointThemeSnapshot(
     val beam: WaypointStyleBeamConfig,
     val label: WaypointStyleLabelConfig,
     val symbol: WaypointStyleSymbolConfig,
+    val betterHudIcon: String,
 )
 
 private fun Ref<WaypointThemeEntry>.snapshotOrNull(): WaypointThemeSnapshot? {
     if (!isSet) return null
     val selected = runCatching { get() }.getOrNull() ?: return null
-    return WaypointThemeSnapshot(selected.id, selected.beam, selected.label, selected.symbol)
+    return WaypointThemeSnapshot(selected.id, selected.beam, selected.label, selected.symbol, selected.betterHudIcon)
 }
 
 enum class WaypointPreset {
@@ -196,6 +200,7 @@ private object QuestWaypointCatalog {
             ),
             label = WaypointStyleLabelConfig(),
             symbol = WaypointStyleSymbolConfig(),
+            betterHudIcon = "",
         )
     }
 }
@@ -209,9 +214,24 @@ private object QuestWaypointCatalog {
 internal object WaypointTargetRegistry {
     private val routes = ConcurrentHashMap<UUID, ConcurrentHashMap<String, WaypointRoute>>()
     private val entities = ConcurrentHashMap<UUID, ConcurrentHashMap<String, EntityWaypointTarget>>()
+    private val warnedPathConflicts = ConcurrentHashMap.newKeySet<String>()
 
     fun registerRoute(playerId: UUID, entryId: String, route: WaypointRoute) {
-        routes.computeIfAbsent(playerId) { ConcurrentHashMap() }[entryId] = route
+        val playerRoutes = routes.computeIfAbsent(playerId) { ConcurrentHashMap() }
+        playerRoutes[entryId] = route
+        val duplicates = playerRoutes.entries
+            .filter { it.value.objectiveId == route.objectiveId }
+            .map { it.key }
+            .sorted()
+        if (duplicates.size > 1) {
+            val warningKey = "${route.objectiveId}:${duplicates.joinToString(",")}"
+            if (warnedPathConflicts.add(warningKey)) {
+                org.bukkit.Bukkit.getLogger().warning(
+                    "[WaypointRPG] Multiple waypoint_path entries select objective '${route.objectiveId}': " +
+                        duplicates.joinToString() + ". Lowest stable entry ID wins."
+                )
+            }
+        }
     }
 
     fun unregisterRoute(playerId: UUID, entryId: String) {
@@ -234,7 +254,7 @@ internal object WaypointTargetRegistry {
 
     fun routesFor(playerId: UUID): List<WaypointRoute> = routes[playerId]
         ?.entries
-        ?.sortedWith(compareByDescending<Map.Entry<String, WaypointRoute>> { it.value.priority }.thenBy { it.key })
+        ?.sortedBy { it.key }
         ?.map { it.value }
         .orEmpty()
 
@@ -250,16 +270,22 @@ internal object WaypointTargetRegistry {
         maxTargets: Int,
         includeObjectives: Boolean = true,
         includeEntities: Boolean = true,
-    ): List<WaypointTarget> = resolveWaypointTargets(
-        player = player,
-        selection = selection,
-        maxTargets = maxTargets,
-        entityTargets = entitiesFor(player.uniqueId),
-        includeObjectives = includeObjectives,
-        includeEntities = includeEntities,
-    ).map { target ->
-        val questId = target.objective?.quest?.id ?: target.questId
-        target.copy(style = target.style ?: QuestWaypointCatalog.themeFor(questId))
+        includePaths: Boolean = true,
+    ): List<WaypointTarget> {
+        val styled = resolveWaypointTargets(
+            player = player,
+            selection = selection,
+            maxTargets = maxTargets,
+            entityTargets = entitiesFor(player.uniqueId),
+            includeObjectives = includeObjectives,
+            includeEntities = includeEntities,
+        ).map { target ->
+            val questId = target.objective?.quest?.id ?: target.questId
+            target.copy(style = target.style ?: QuestWaypointCatalog.themeFor(questId))
+        }
+        return if (includePaths && includeObjectives) {
+            WaypointPathProgress.apply(player, routesFor(player.uniqueId), styled)
+        } else styled
     }
 }
 
@@ -273,20 +299,11 @@ class WaypointPathEntry(
     override val id: String = "",
     override val name: String = "",
 
+    @Help("Loop to the first point after completing the route.")
+    val loop: Boolean = false,
+
     @Help("Location objective that uses this route. Select it from the Typewriter panel.")
     val objective: Ref<LocatableObjective> = emptyRef(),
-
-    @Help("Higher priority wins if several active routes select the same objective.")
-    val priority: Int = 0,
-
-    @Help("Allow advancing by reaching a later point before the current point.")
-    val allowSkip: Boolean = true,
-
-    @Help("Reset progress when this route leaves the player's active audience.")
-    val resetOnObjectiveChange: Boolean = true,
-
-    @Help("Loop to the first point after completing the route.")
-    val resetOnComplete: Boolean = false,
 
     @Help("Ordered path points. Add and reorder them directly in the panel.")
     val points: List<WaypointRoutePoint> = emptyList(),
@@ -296,10 +313,10 @@ class WaypointPathEntry(
     internal fun route(): WaypointRoute = WaypointRoute(
         objectiveId = objective.id,
         routeId = id,
-        priority = priority,
-        allowSkip = allowSkip,
-        resetOnObjectiveChange = resetOnObjectiveChange,
-        resetOnComplete = resetOnComplete,
+        priority = 0,
+        allowSkip = true,
+        resetOnObjectiveChange = true,
+        resetOnComplete = loop,
         points = points,
     )
 }
@@ -327,10 +344,7 @@ private class WaypointRouteDisplay(
     private fun unregister(playerId: UUID) {
         if (!registeredPlayers.remove(playerId)) return
         WaypointTargetRegistry.unregisterRoute(playerId, entry.id)
-        if (entry.resetOnObjectiveChange) {
-            val objectiveId = entry.objective.id
-            globalRouteIndices.remove(routeStateKey(playerId, objectiveId, entry.id))
-        }
+        WaypointPathProgress.reset(playerId, entry.objective.id, entry.id)
     }
 }
 
@@ -343,6 +357,12 @@ private class WaypointRouteDisplay(
 class EntityWaypointEntry(
     override val id: String = "",
     override val name: String = "",
+
+    @Help("Show a private glow around this entity for players in the audience.")
+    val glow: Boolean = false,
+
+    @Help("Maximum distance for the private glow.")
+    val glowRange: Double = 20.0,
 
     @Help("How this entity is located.")
     val targetType: EntityTargetType = EntityTargetType.TYPEWRITER_NPC,
@@ -389,6 +409,8 @@ class EntityWaypointEntry(
         registryId = id,
         questId = quest.id.takeIf { quest.isSet },
         themeOverride = themeOverride.snapshotOrNull(),
+        glow = glow,
+        glowRange = glowRange,
     )
 }
 

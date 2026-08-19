@@ -11,14 +11,14 @@ flat in float waypointRpgText;
 out vec4 fragColor;
 
 void main() {
-    vec4 color = texture(Sampler0, texCoord0).rrrr * vertexColor;
+    vec4 color = texture(Sampler0, texCoord0).rrrr * vertexColor * ColorModulator;
     if (color.a < 0.1) {
         discard;
     }
 
+    gl_FragDepth = 0.00005;
     if (waypointRpgText > 0.5) {
         color.a = 1.0;
-        gl_FragDepth = 0.00005;
     }
-    fragColor = color * ColorModulator;
+    fragColor = color;
 }

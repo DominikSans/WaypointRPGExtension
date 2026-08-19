@@ -321,6 +321,8 @@ data class EntityWaypointTarget(
     val registryId: String = "",
     val questId: String? = null,
     val themeOverride: WaypointThemeSnapshot? = null,
+    val glow: Boolean = false,
+    val glowRange: Double = 20.0,
 )
 
 data class WaypointRoutePoint(
@@ -2629,115 +2631,15 @@ internal data class WaypointTarget(
     val sourceId: String? = null,
     val questId: String? = null,
     val style: WaypointThemeSnapshot? = null,
+    val packetEntityId: Int? = null,
+    val glowEnabled: Boolean = false,
+    val glowRange: Double = 20.0,
 ) {
     // Slot-key memo — targets live in cachedObjectiveTargets for several ticks and the
     // display calls key() multiple times per tick (stale sweep, slot lookup, distinctBy);
     // positional keys build a world-UID string each time. Safe: targets are never shared
     // between display instances, and the key inputs are immutable constructor fields.
     var slotKeyCache: String? = null
-}
-
-// Read-only route application for zone trigger and BetterHUD.
-// Does NOT advance the route index — static_waypoint owns advancement.
-internal fun applyRouteReadOnly(
-    player: Player,
-    objectiveId: String,
-    routes: List<WaypointRoute>,
-    directTarget: WaypointTarget,
-): WaypointTarget {
-    val route = routes.firstOrNull { it.objectiveId == objectiveId }
-        ?: return directTarget
-    if (route.points.isEmpty()) return directTarget
-    val effectiveRouteId = route.routeId.ifBlank { objectiveId }
-    val key = routeStateKey(player.uniqueId, objectiveId, effectiveRouteId)
-    val index = globalRouteIndices.getOrDefault(key, 0)
-
-    val resolvedPoints = route.points.mapIndexedNotNull { idx, point ->
-        val position = runCatching { point.position.get(player) }.getOrNull() ?: return@mapIndexedNotNull null
-        val location = runCatching { position.toBukkitLocation() }.getOrNull() ?: return@mapIndexedNotNull null
-        Triple(idx, point, Pair(position, location))
-    }
-    val nextPoint = resolvedPoints.firstOrNull { it.first >= index }
-        ?: return directTarget
-    val (pos, loc) = nextPoint.third
-    val dist = if (loc.world == player.location.world) player.location.distance(loc) else Double.POSITIVE_INFINITY
-    val pointName = runCatching { nextPoint.second.name.get(player) }.getOrNull().orEmpty()
-    return WaypointTarget(
-        objective = directTarget.objective,
-        position = pos,
-        location = loc,
-        distance = dist,
-        routePointIndex = nextPoint.first,
-        routePointCount = resolvedPoints.size,
-        routePointName = pointName,
-        questId = directTarget.questId,
-        style = directTarget.style,
-    )
-}
-
-/** Advances the shared route index. The primary visual entry is the only writer. */
-internal fun applyRouteAdvancing(
-    player: Player,
-    objectiveId: String,
-    routes: List<WaypointRoute>,
-    directTarget: WaypointTarget,
-): WaypointTarget {
-    if (directTarget.entityUUID != null) return directTarget
-    val route = routes.firstOrNull { it.objectiveId == objectiveId }
-        ?: return directTarget
-    if (route.points.isEmpty()) return directTarget
-    val resolved = route.points.mapIndexedNotNull { index, point ->
-        val position = runCatching { point.position.get(player) }.getOrNull()
-            ?: return@mapIndexedNotNull null
-        val location = runCatching { position.toBukkitLocation() }.getOrNull()
-            ?: return@mapIndexedNotNull null
-        Triple(index, point, Pair(position, location))
-    }
-    if (resolved.isEmpty()) return directTarget
-
-    val effectiveRouteId = route.routeId.ifBlank { objectiveId }
-    val key = routeStateKey(player.uniqueId, objectiveId, effectiveRouteId)
-    var index = globalRouteIndices.getOrDefault(key, 0).coerceIn(0, resolved.size)
-    val playerLocation = player.location
-
-    if (route.allowSkip) {
-        resolved.forEach { (pointIndex, point, pair) ->
-            val radius = point.radius.coerceAtLeast(0.1)
-            if (pointIndex >= index && pair.second.world == playerLocation.world &&
-                playerLocation.distanceSquared(pair.second) <= radius * radius
-            ) index = pointIndex + 1
-        }
-    } else {
-        resolved.firstOrNull { it.first == index }?.let { (_, point, pair) ->
-            val radius = point.radius.coerceAtLeast(0.1)
-            if (pair.second.world == playerLocation.world &&
-                playerLocation.distanceSquared(pair.second) <= radius * radius
-            ) index++
-        }
-    }
-
-    if (index >= resolved.size) {
-        if (!route.resetOnComplete) {
-            globalRouteIndices[key] = resolved.size
-            return directTarget
-        }
-        index = 0
-    }
-    globalRouteIndices[key] = index
-    val next = resolved.first { it.first >= index }
-    val location = next.third.second
-    return WaypointTarget(
-        objective = directTarget.objective,
-        position = next.third.first,
-        location = location,
-        distance = if (location.world == playerLocation.world)
-            playerLocation.distance(location) else Double.POSITIVE_INFINITY,
-        routePointIndex = next.first,
-        routePointCount = resolved.size,
-        routePointName = runCatching { next.second.name.get(player) }.getOrNull().orEmpty(),
-        questId = directTarget.questId,
-        style = directTarget.style,
-    )
 }
 
 // Stable key for zone-trigger per-target tracking.
@@ -2806,6 +2708,9 @@ private fun resolveEntityTarget(
         },
         questId = et.questId,
         style = et.themeOverride,
+        packetEntityId = entity.entityId,
+        glowEnabled = et.glow,
+        glowRange = et.glowRange,
     )
 }
 
@@ -2900,8 +2805,9 @@ internal fun resolveTypewriterNpcTarget(et: EntityWaypointTarget, player: Player
             .findDisplays(com.typewritermc.engine.paper.entry.entity.SharedAudienceEntityDisplay::class)
             .firstOrNull { it.instanceEntryRef.id == et.npcEntryId }
 
-        val rawLoc: Location? = if (display != null && display.isSpawnedIn(player.uniqueId)) {
-            display.position(player.uniqueId)?.toBukkitLocation()
+        val spawnedDisplay = display?.takeIf { it.isSpawnedIn(player.uniqueId) }
+        val rawLoc: Location? = if (spawnedDisplay != null) {
+            spawnedDisplay.position(player.uniqueId)?.toBukkitLocation()
         } else {
             Query.findById<com.typewritermc.engine.paper.entry.entity.SimpleEntityInstance>(et.npcEntryId)
                 ?.spawnLocation?.toBukkitLocation()
@@ -2923,6 +2829,9 @@ internal fun resolveTypewriterNpcTarget(et: EntityWaypointTarget, player: Player
                 ?: "npc:${et.npcEntryId}",
             questId = et.questId,
             style = et.themeOverride,
+            packetEntityId = spawnedDisplay?.entityId(player.uniqueId)?.takeIf { it > 0 },
+            glowEnabled = et.glow,
+            glowRange = et.glowRange,
         )
     }.getOrNull()
 }

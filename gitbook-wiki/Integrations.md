@@ -1,6 +1,6 @@
-# Quest waypoints, paths, and entities
+# Quest Waypoints, Paths, and Entities
 
-v3.0.3 uses one global `static_waypoint`. Quest appearance, path checkpoints, and
+v3.1.0 uses one global `static_waypoint`. Quest appearance, path checkpoints, and
 entity targets are separate definitions consumed by the same per-player registry.
 
 ## Quick setup: `quest_waypoint`
@@ -78,7 +78,8 @@ Create this entry only when a built-in preset is insufficient:
     "overrideShadow": false,
     "text": "<light_purple>◆</light_purple>",
     "shadow": false
-  }
+  },
+  "betterHudIcon": "quest"
 }
 ```
 
@@ -95,6 +96,10 @@ Then configure the profile:
 
 Disabled override booleans inherit their values from `static_waypoint`.
 
+The symbol override is still TextDisplay/MiniMessage content. It may reference a custom
+font glyph or CraftEngine image tag, including an animated texture from the final pack.
+v3.1.0 does not expose ItemDisplay or CustomModelData symbol fields.
+
 ## Paths: `waypoint_path`
 
 Create a path only when an objective needs intermediate checkpoints. Its objective
@@ -107,10 +112,7 @@ objective's Quest profile.
   "id": "red_village_path",
   "name": "Red Village Path",
   "objective": "red_village_objective",
-  "priority": 10,
-  "allowSkip": true,
-  "resetOnObjectiveChange": true,
-  "resetOnComplete": false,
+  "loop": false,
   "points": [
     {
       "name": "Bridge",
@@ -128,7 +130,8 @@ objective's Quest profile.
 }
 ```
 
-If two active paths select the same objective, the highest priority wins. Do not create
+If two active paths select the same objective, the lowest stable entry ID wins and a
+warning is logged. Do not create
 an empty path merely to assign a color; that is now the role of `quest_waypoint`.
 
 ## Entities: `entity_waypoint`
@@ -141,6 +144,8 @@ see the entity target. Select an optional Quest to inherit its appearance:
   "type": "entity_waypoint",
   "id": "red_village_guide",
   "name": "Red Village Guide",
+  "glow": true,
+  "glowRange": 20.0,
   "targetType": "TYPEWRITER_NPC",
   "npc": "red_village_guide_instance",
   "quest": "red_village_quest",
@@ -163,7 +168,9 @@ entity_waypoint.themeOverride
 ```
 
 Use `UUID`, `NAME`, or `SCOREBOARD_TAG` for Bukkit entities. `TYPEWRITER_NPC` exposes a
-filtered selector for Typewriter shared entity instances.
+filtered selector for Typewriter shared entity instances. `glow` works for both: the
+extension uses Bukkit entity IDs for vanilla entities and Typewriter's per-player
+packet entity ID for NPCs.
 
 ## Recommended page structure
 
@@ -184,7 +191,7 @@ Quest manifest page
 
 ## Migration from the temporary names
 
-| Temporary v3.0.2 ID | v3.0.3 ID | Change |
+| Temporary v3.0.2 ID | v3.1.0 ID | Change |
 |---|---|---|
 | `waypoint_style` | `waypoint_theme` | Advanced appearance only. |
 | `waypoint_route` | `waypoint_path` | Remove its old `style` field. |
@@ -195,4 +202,9 @@ Quest manifest page
 
 `waypoint_zone_trigger` and `waypoint_betterhud_bridge` automatically consume active
 objectives, paths, and entity waypoints. Their configuration does not duplicate paths
-or entities. BetterHUD remains optional and is accessed reflectively.
+or entities. BetterHUD remains optional and is accessed reflectively. Set the bridge's
+`iconName` to a fallback BetterHUD `custom-icon`; a theme's `betterHudIcon` overrides it
+for targets using that theme.
+
+The BetterHUD icon and the in-world `symbol.text` are independent. This lets the compass
+use a BetterHUD image while the world marker uses a different font glyph or animation.
